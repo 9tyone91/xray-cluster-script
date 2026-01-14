@@ -1,19 +1,21 @@
 #!/bin/bash
 
+# 颜色定义
 red='\033[0;31m'
 green='\033[0;32m'
 yellow='\033[0;33m'
 plain='\033[0m'
 
-[[ $$   EUID -ne 0 ]] && echo -e "   $${red}必须root运行！${plain}" && exit 1
+[[ $EUID -ne 0 ]] && echo -e "${red}必须root运行！${plain}" && exit 1
 
-CONF_DIR="/etc/xray/conf"
-MAIN_CONF="/etc/xray/config.json"
-XRAY_BIN="/etc/xray/bin/xray"  # 你的实际路径
+CONF_DIR="/etc/xray/conf"  # 你的多配置目录
+XRAY_BIN="/etc/xray/bin/xray"  # 你的xray命令路径
 
 if [[ ! -d "$CONF_DIR" ]]; then
-    echo -e "$$   {red}未找到配置目录！   $${plain}"
-    exit 1
+    echo -e "${green}安装233boy Xray...${plain}"
+    bash <(wget -qO- https://github.com/233boy/Xray/raw/main/install.sh) || exit 1
+    sleep 5
+    $XRAY_BIN restart
 fi
 
 gen_uuid() { uuidgen; }
@@ -26,7 +28,7 @@ gen_keypair() {
 gen_shortid() { openssl rand -hex 8; }
 
 config_landing() {
-    echo -e "$$   {green}配置出口节点   $${plain}"
+    echo -e "${green}配置出口节点${plain}"
     port=$(($RANDOM % 50000 + 10000))
     read -p "端口 (默认 $port): " port_input && [[ -n "$port_input" ]] && port=$port_input
 
@@ -51,21 +53,21 @@ config_landing() {
   "outbounds": [{"protocol": "freedom"}]
 }
 EOF
-    echo "完成！UUID: $uuid | PubKey: $public_key"
+    echo -e "${green}出口完成！文件: $conf_file${plain}"
+    echo "UUID: $uuid | Pub Key: $public_key"
     $XRAY_BIN restart
 }
 
-# config_transit 函数（类似，添加 outbound "to-landing"）
 config_transit() {
-    echo -e "$$   {green}配置中转节点   $${plain}"
+    echo -e "${green}配置中转节点${plain}"
     read -p "出口IP: " landing_ip
     read -p "出口端口: " landing_port
     read -p "出口UUID: " landing_uuid
-    read -p "出口PubKey: " landing_pubkey
-    read -p "出口ShortID: " landing_shortid
+    read -p "出口Pub Key: " landing_pubkey
+    read -p "出口Short ID: " landing_shortid
 
     transit_port=443
-    read -p "中转端口 (默认443): " transit_input && [[ -n "$transit_input" ]] && transit_port=$transit_input
+    read -p "中转端口 (默认443): " tport && [[ -n "$tport" ]] && transit_port=$tport
 
     read -p "伪装网站: " dest && [[ -z "$dest" ]] && dest="www.microsoft.com"
 
@@ -94,37 +96,22 @@ config_transit() {
   "routing": {"rules": [{"type": "field", "outboundTag": "to-landing", "network": "tcp,udp"}]}
 }
 EOF
-    echo "完成！UUID: $transit_uuid | PubKey: $transit_public"
+    echo -e "${green}中转完成！文件: $conf_file${plain}"
+    echo "UUID: $transit_uuid | Pub Key: $transit_public"
     $XRAY_BIN restart
 }
 
-list_configs() {
-    echo -e "$$   {green}配置列表   $${plain}"
-    ls -l $CONF_DIR/*.json 2>/dev/null || echo "无配置"
-    for f in $CONF_DIR/*.json; do
-        echo "文件: $(basename $f)"
-        grep -E '"tag": "to-landing"|"address":' $f || echo "无relay"
-        echo "---"
-    done
-}
+echo -e "${yellow}集群脚本菜单${plain}"
+echo "1. 配置出口节点"
+echo "2. 配置中转节点"
+echo "3. 退出"
+read -p "选择: " choice
 
-main_menu() {
-    echo -e "$$   {yellow}集群管理菜单   $${plain}"
-    echo "1. 配置出口"
-    echo "2. 配置中转"
-    echo "3. 列表检查"
-    echo "4. 原xray菜单"
-    echo "0. 退出"
-    read -p "选择: " ch
-    case $ch in
-        1) config_landing ;;
-        2) config_transit ;;
-        3) list_configs ;;
-        4) $XRAY_BIN ;;
-        0) exit ;;
-        *) echo "无效" ;;
-    esac
-    main_menu
-}
+case $choice in
+    1) config_landing ;;
+    2) config_transit ;;
+    3) exit 0 ;;
+    *) echo "无效" ;;
+esac
 
-main_menu
+echo -e "${green}完成！用 'xray' 命令管理其他功能。检查配置: ls $CONF_DIR && cat $CONF_DIR/*.json${plain}"
