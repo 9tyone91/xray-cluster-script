@@ -46,10 +46,10 @@ gen_keypair() {
         fi
     fi
 
-    # 强制在生成后立即完整显示 Private 和 Public key
+    # 强制完整显示 Private 和 Public key（用完整 echo，避免截断）
     echo -e "${green}Private Key (服务器用): ${private_key}${plain}"
     echo -e "${green}Public Key (客户端pbk用): ${public_key}${plain}"
-    echo "$private_key $public_key"
+    echo "${private_key} ${public_key}"  # 返回给后续使用
 }
 
 gen_shortid() { openssl rand -hex 8; }
@@ -61,8 +61,8 @@ config_landing() {
 
     uuid=$(gen_uuid)
     keypair=$(gen_keypair)
-    private_key=$(echo $keypair | awk '{print $1}')
-    public_key=$(echo $keypair | awk '{print $2}')
+    private_key=$(echo "$keypair" | awk '{print $1}')
+    public_key=$(echo "$keypair" | awk '{print $2}')
     short_id=$(gen_shortid)
 
     read -p "伪装网站 (默认 www.microsoft.com): " dest && [[ -z "$dest" ]] && dest="www.microsoft.com"
@@ -82,10 +82,13 @@ config_landing() {
 EOF
     echo -e "${green}完成！文件: $conf_file${plain}"
     echo "UUID: $uuid"
-    echo "Public Key: $public_key"
     echo "Short ID: $short_id"
     echo "端口: $port"
     echo "伪装: $dest"
+
+    # 再次强制显示 key（确保不漏）
+    echo -e "${green}Private Key (服务器用): ${private_key}${plain}"
+    echo -e "${green}Public Key (客户端pbk用): ${public_key}${plain}"
 
     # 自动生成完整 vless 链接
     server_ip=$(curl -s ifconfig.me || echo "你的服务器IP")
