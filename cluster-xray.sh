@@ -32,29 +32,23 @@ gen_uuid() {
 
 gen_keypair() {
     echo -e "${green}自动生成 Reality keypair...${plain}"
-    local keypair=""
-    local private_key=""
-    local public_key=""
+    local keypair_raw=$($XRAY_BIN x25519 2>/dev/null)
+    echo "原始输出: $keypair_raw"  # 调试用
 
-    # 循环尝试生成，直到成功
-    while true; do
-        keypair=$($XRAY_BIN x25519 2>/dev/null)
-        private_key=$(echo "$keypair" | grep -i "private key" | awk '{print $3}')
-        public_key=$(echo "$keypair" | grep -i "public key" | awk '{print $3}')
+    # 更鲁棒提取（忽略大小写、空格、换行）
+    private_key=$(echo "$keypair_raw" | grep -i "private" | sed 's/.*: //g' | tr -d ' ')
+    public_key=$(echo "$keypair_raw" | grep -i "public" | sed 's/.*: //g' | tr -d ' ')
 
-        if [[ -n "$private_key" && -n "$public_key" ]]; then
-            break  # 成功，退出循环
-        fi
+    if [[ -z "$private_key" || -z "$public_key" ]]; then
+        echo -e "${red}自动生成失败（格式不匹配），请手动运行 $XRAY_BIN x25519 获取完整key，然后重新配置${plain}"
+        exit 1
+    fi
 
-        echo -e "${yellow}自动生成失败，重试...${plain}"
-        sleep 1
-    done
+    # 完整显示
+    echo -e "${green}Private Key (服务器用): $private_key${plain}"
+    echo -e "${green}Public Key (客户端pbk用): $public_key${plain}"
 
-    # 强制完整显示（用完整 echo，避免截断）
-    echo -e "${green}Private Key (服务器用): ${private_key}${plain}"
-    echo -e "${green}Public Key (客户端pbk用): ${public_key}${plain}"
-
-    echo "${private_key} ${public_key}"
+    echo "$private_key $public_key"
 }
 
 gen_shortid() { openssl rand -hex 8; }
@@ -92,8 +86,8 @@ EOF
     echo "伪装: $dest"
 
     # 再次强制完整显示 key
-    echo -e "${green}Private Key (服务器用): ${private_key}${plain}"
-    echo -e "${green}Public Key (客户端pbk用): ${public_key}${plain}"
+    echo -e "${green}Private Key (服务器用): $private_key${plain}"
+    echo -e "${green}Public Key (客户端pbk用): $public_key${plain}"
 
     # 自动生成完整 vless 链接
     server_ip=$(curl -s ifconfig.me || echo "你的服务器IP")
