@@ -8,8 +8,8 @@ plain='\033[0m'
 
 [[ $EUID -ne 0 ]] && echo -e "${red}必须root运行！${plain}" && exit 1
 
-CONF_DIR="/etc/xray/conf"  # 你的多配置目录
-XRAY_BIN="/etc/xray/bin/xray"  # 你的xray命令路径
+CONF_DIR="/etc/xray/conf"
+XRAY_BIN="/etc/xray/bin/xray"
 
 if [[ ! -d "$CONF_DIR" ]]; then
     echo -e "${green}安装233boy Xray...${plain}"
@@ -54,7 +54,7 @@ config_landing() {
 }
 EOF
     echo -e "${green}出口完成！文件: $conf_file${plain}"
-    echo "UUID: $uuid | Pub Key: $public_key"
+    echo "UUID: $uuid | Pub Key: $public_key | Short ID: $short_id"
     $XRAY_BIN restart
 }
 
@@ -114,4 +114,5 @@ case $choice in
     *) echo "无效" ;;
 esac
 
-echo -e "${green}完成！用 'xray' 命令管理其他功能。检查配置: ls $CONF_DIR && cat $CONF_DIR/*.json${plain}"
+echo -e "${green}完成！检查配置: ls $CONF_DIR && cat $CONF_DIR/*.json${plain}"
+echo "用 'xray' 进入原菜单管理。配置后服务已重启。"
