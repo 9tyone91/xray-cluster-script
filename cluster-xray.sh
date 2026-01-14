@@ -31,25 +31,30 @@ gen_uuid() {
 }
 
 gen_keypair() {
-    echo -e "${green}生成 Reality keypair...${plain}"
-    keypair=$($XRAY_BIN x25519 2>/dev/null)
-    private_key=$(echo "$keypair" | grep -i "private key" | awk '{print $3}')
-    public_key=$(echo "$keypair" | grep -i "public key" | awk '{print $3}')
+    echo -e "${green}自动生成 Reality keypair...${plain}"
+    local keypair=""
+    local private_key=""
+    local public_key=""
 
-    if [[ -z "$private_key" || -z "$public_key" ]]; then
-        echo -e "${yellow}自动生成失败！请手动输入 key（运行 $XRAY_BIN x25519 获取）${plain}"
-        read -p "Private key: " private_key
-        read -p "Public key: " public_key
-        if [[ -z "$private_key" || -z "$public_key" ]]; then
-            echo -e "${red}未输入key，退出${plain}"
-            exit 1
+    # 循环尝试生成，直到成功
+    while true; do
+        keypair=$($XRAY_BIN x25519 2>/dev/null)
+        private_key=$(echo "$keypair" | grep -i "private key" | awk '{print $3}')
+        public_key=$(echo "$keypair" | grep -i "public key" | awk '{print $3}')
+
+        if [[ -n "$private_key" && -n "$public_key" ]]; then
+            break  # 成功，退出循环
         fi
-    fi
 
-    # 强制完整显示 Private 和 Public key（用完整 echo，避免截断）
+        echo -e "${yellow}自动生成失败，重试...${plain}"
+        sleep 1
+    done
+
+    # 强制完整显示（用完整 echo，避免截断）
     echo -e "${green}Private Key (服务器用): ${private_key}${plain}"
     echo -e "${green}Public Key (客户端pbk用): ${public_key}${plain}"
-    echo "${private_key} ${public_key}"  # 返回给后续使用
+
+    echo "${private_key} ${public_key}"
 }
 
 gen_shortid() { openssl rand -hex 8; }
@@ -86,7 +91,7 @@ EOF
     echo "端口: $port"
     echo "伪装: $dest"
 
-    # 再次强制显示 key（确保不漏）
+    # 再次强制完整显示 key
     echo -e "${green}Private Key (服务器用): ${private_key}${plain}"
     echo -e "${green}Public Key (客户端pbk用): ${public_key}${plain}"
 
