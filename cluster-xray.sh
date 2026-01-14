@@ -32,19 +32,31 @@ gen_uuid() {
 
 gen_keypair() {
     echo -e "${green}自动生成 Reality keypair...${plain}"
-    local keypair_raw=$($XRAY_BIN x25519 2>/dev/null)
-    echo "原始输出: $keypair_raw"  # 调试用
+    local private_key=""
+    local public_key=""
+    local attempts=0
 
-    # 更鲁棒提取（忽略大小写、空格、换行）
-    private_key=$(echo "$keypair_raw" | grep -i "private" | sed 's/.*: //g' | tr -d ' ')
-    public_key=$(echo "$keypair_raw" | grep -i "public" | sed 's/.*: //g' | tr -d ' ')
+    while [[ -z "$private_key" || -z "$public_key" ]] && (( attempts < 5 )); do
+        local keypair_raw=$($XRAY_BIN x25519 2>/dev/null)
+        echo "原始输出 (调试): $keypair_raw"  # 打印原始，帮助排查
+
+        # 超级鲁棒提取：忽略大小写、空格、换行、额外文本
+        private_key=$(echo "$keypair_raw" | grep -i "private" | sed 's/.*://g' | tr -d '[:space:]')
+        public_key=$(echo "$keypair_raw" | grep -i "public" | sed 's/.*://g' | tr -d '[:space:]')
+
+        ((attempts++))
+        if [[ -z "$private_key" || -z "$public_key" ]]; then
+            echo -e "${yellow}尝试 $attempts 次失败，重试...${plain}"
+            sleep 1
+        fi
+    done
 
     if [[ -z "$private_key" || -z "$public_key" ]]; then
-        echo -e "${red}自动生成失败（格式不匹配），请手动运行 $XRAY_BIN x25519 获取完整key，然后重新配置${plain}"
+        echo -e "${red}自动生成失败（格式不匹配）！请手动运行 $XRAY_BIN x25519 获取key，然后重新配置。${plain}"
         exit 1
     fi
 
-    # 完整显示
+    # 强制完整显示（完整 echo，不截断）
     echo -e "${green}Private Key (服务器用): $private_key${plain}"
     echo -e "${green}Public Key (客户端pbk用): $public_key${plain}"
 
