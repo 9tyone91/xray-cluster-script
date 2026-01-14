@@ -19,27 +19,36 @@ fi
 gen_uuid() {
     if ! command -v uuidgen >/dev/null 2>&1; then
         echo -e "${yellow}uuidgen 未安装！${plain}"
-        read -p "自动安装？(y/n，默认y): " ch
+        read -p "自动安装 uuid-runtime？(y/n，默认y): " ch
         ch=${ch:-y}
         [[ "$ch" == "y" || "$ch" == "Y" ]] && apt update && apt install uuid-runtime -y
+        if ! command -v uuidgen >/dev/null 2>&1; then
+            echo -e "${red}安装失败，请手动: apt install uuid-runtime -y${plain}" >&2
+            exit 1
+        fi
     fi
     uuidgen
 }
 
 gen_keypair() {
+    echo -e "${green}生成 Reality keypair...${plain}"
     keypair=$($XRAY_BIN x25519 2>/dev/null)
-    private_key=$(echo "$keypair" | grep -i "private" | awk '{print $3}')
-    public_key=$(echo "$keypair" | grep -i "public" | awk '{print $3}')
+    private_key=$(echo "$keypair" | grep -i "private key" | awk '{print $3}')
+    public_key=$(echo "$keypair" | grep -i "public key" | awk '{print $3}')
+
     if [[ -z "$private_key" || -z "$public_key" ]]; then
-        echo -e "${yellow}自动失败，请手动输入（运行 $XRAY_BIN x25519 获取）${plain}"
+        echo -e "${yellow}自动生成失败！请手动输入 key（运行 $XRAY_BIN x25519 获取）${plain}"
         read -p "Private key: " private_key
         read -p "Public key: " public_key
         if [[ -z "$private_key" || -z "$public_key" ]]; then
+            echo -e "${red}未输入key，退出${plain}"
             exit 1
         fi
     fi
-    echo -e "${green}Private Key: $private_key${plain}"
-    echo -e "${green}Public Key: $public_key${plain}"
+
+    # 强制显示 Private 和 Public key
+    echo -e "${green}Private Key (服务器用): $private_key${plain}"
+    echo -e "${green}Public Key (客户端pbk用): $public_key${plain}"
     echo "$private_key $public_key"
 }
 
@@ -76,6 +85,13 @@ EOF
     echo "Public Key: $public_key"
     echo "Short ID: $short_id"
     echo "端口: $port"
+    echo "伪装: $dest"
+
+    # 自动生成完整 vless 链接
+    server_ip=$(curl -s ifconfig.me || echo "你的服务器IP")
+    echo -e "${yellow}完整 vless 链接（直接复制导入客户端）:${plain}"
+    echo "vless://$uuid@$server_ip:$port?encryption=none&security=reality&pbk=$public_key&fp=chrome&type=tcp&flow=xtls-rprx-vision&sni=$dest&sid=$short_id#出口节点"
+
     systemctl restart xray || $XRAY_BIN restart
 }
 
@@ -133,8 +149,9 @@ case $choice in
     1) config_landing ;;
     2) config_transit ;;
     3) exit 0 ;;
-    *) echo "无效" ;;
+    *) echo "无效选择" ;;
 esac
 
 echo -e "${green}完成！服务已重启。"
 echo "检查: ls $CONF_DIR && cat $CONF_DIR/VLESS-REALITY-*.json"
+echo "用 'xray' 进入原菜单。"
