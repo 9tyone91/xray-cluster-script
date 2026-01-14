@@ -46,9 +46,9 @@ gen_keypair() {
         fi
     fi
 
-    # 强制显示 Private 和 Public key
-    echo -e "${green}Private Key (服务器用): $private_key${plain}"
-    echo -e "${green}Public Key (客户端pbk用): $public_key${plain}"
+    # 强制在生成后立即完整显示 Private 和 Public key
+    echo -e "${green}Private Key (服务器用): ${private_key}${plain}"
+    echo -e "${green}Public Key (客户端pbk用): ${public_key}${plain}"
     echo "$private_key $public_key"
 }
 
