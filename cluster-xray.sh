@@ -54,7 +54,7 @@ config_landing() {
 }
 EOF
     echo -e "${green}出口完成！文件: $conf_file${plain}"
-    echo "UUID: $uuid | Pub Key: $public_key | Short ID: $short_id"
+    echo "UUID: $uuid | Pub Key: $public_key"
     $XRAY_BIN restart
 }
 
