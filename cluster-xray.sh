@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# 颜色
+# 颜色定义
 red='\033[0;31m'
 green='\033[0;32m'
 yellow='\033[0;33m'
@@ -8,37 +8,41 @@ plain='\033[0m'
 
 [[ $EUID -ne 0 ]] && echo -e "${red}必须root运行！${plain}" && exit 1
 
-echo -e "${yellow}混合脚本：先安装233boy Xray，再自动加集群relay配置${plain}"
-echo "脚本会先跑官方233boy安装（https://github.com/233boy/Xray）"
-echo "安装完后生成中转/出口 config（Reality模式）"
-echo ""
+# 步骤1: 安装或更新233boy Xray（如果已装，跳过安装但检查）
+if ! command -v xray &> /dev/null; then
+    echo -e "${green}安装233boy Xray...${plain}"
+    bash <(wget -qO- https://github.com/233boy/Xray/raw/main/install.sh) || {
+        echo -e "${red}安装失败！检查网络或手动安装。${plain}"
+        exit 1
+    }
+else
+    echo -e "${yellow}Xray已安装，跳过。${plain}"
+fi
 
-# 步骤1: 安装233boy Xray
-echo -e "${green}步骤1: 安装233boy Xray...${plain}"
-bash <(wget -qO- https://github.com/233boy/Xray/raw/main/install.sh) || {
-    echo -e "${red}233boy安装失败！请检查网络或手动安装。${plain}"
+# 确定配置路径（兼容不同安装）
+CONF_DIR=$(find /etc /usr/local/etc -type d -name "conf" -path "*/xray/conf" 2>/dev/null | head -1 || echo "/etc/xray/conf")
+MAIN_CONF=$(find /etc /usr/local/etc -type f -name "config.json" -path "*/xray/config.json" 2>/dev/null | head -1 || echo "/etc/xray/config.json")
+
+if [[ -z "$CONF_DIR" || -z "$MAIN_CONF" ]]; then
+    echo -e "${red}未找到Xray配置路径！请确认安装。${plain}"
     exit 1
-}
+fi
 
-# 等待服务启动
-sleep 5
-systemctl restart xray
-
-# 工具函数
+# 工具函数（gen_uuid 等，从之前脚本复制）
 gen_uuid() { uuidgen; }
 gen_keypair() {
-    keypair=$(xray x25519 2>/dev/null || /usr/local/bin/xray x25519)
+    keypair=$(xray x25519)
     private_key=$(echo "$keypair" | grep "Private" | awk '{print $3}')
     public_key=$(echo "$keypair" | grep "Public" | awk '{print $3}')
     echo "$private_key $public_key"
 }
 gen_shortid() { openssl rand -hex 8; }
 
-# 配置出口节点 config
+# 配置出口节点（生成新json文件到conf/）
 config_landing() {
-    echo -e "${green}配置为出口节点（统一出站IP）${plain}"
+    echo -e "${green}配置出口节点...${plain}"
     port=$(($RANDOM % 50000 + 10000))
-    read -p "出口端口 (默认随机 $port): " input_port
+    read -p "端口 (默认 $port): " input_port
     [[ ! -z "$input_port" ]] && port=$input_port
 
     uuid=$(gen_uuid)
@@ -47,61 +51,44 @@ config_landing() {
     public_key=$(echo $keypair | awk '{print $2}')
     short_id=$(gen_shortid)
 
-    read -p "伪装网站 (推荐 www.microsoft.com / www.apple.com): " dest_domain
+    read -p "伪装网站 (默认 www.microsoft.com): " dest_domain
     [[ -z "$dest_domain" ]] && dest_domain="www.microsoft.com"
 
-    config_file="/etc/xray/conf/config.json"  # 233boy常用路径，或 /usr/local/etc/xray/config.json，根据你的安装调整
-    [ ! -f "$config_file" ] && config_file="/usr/local/etc/xray/config.json"
-
-    cp "$config_file" "${config_file}.bak.$(date +%s)"
-
-    cat > "$config_file" <<EOF
+    conf_file="$CONF_DIR/VLESS-REALITY-$port.json"
+    cat > "$conf_file" <<EOF
 {
-  "log": {"loglevel": "warning"},
-  "inbounds": [
-    {
-      "port": $port,
-      "protocol": "vless",
-      "settings": {
-        "clients": [{"id": "$uuid", "flow": "xtls-rprx-vision"}],
-        "decryption": "none"
-      },
-      "streamSettings": {
-        "network": "tcp",
-        "security": "reality",
-        "realitySettings": {
-          "dest": "$dest_domain:443",
-          "serverNames": ["$dest_domain"],
-          "privateKey": "$private_key",
-          "publicKey": "$public_key",
-          "shortIds": ["$short_id"]
-        }
-      },
-      "sniffing": {"enabled": true, "destOverride": ["http", "tls"]}
-    }
-  ],
+  "inbounds": [{
+    "port": $port,
+    "protocol": "vless",
+    "settings": {"clients": [{"id": "$uuid", "flow": "xtls-rprx-vision"}], "decryption": "none"},
+    "streamSettings": {
+      "network": "tcp",
+      "security": "reality",
+      "realitySettings": {"dest": "$dest_domain:443", "serverNames": ["$dest_domain"], "privateKey": "$private_key", "publicKey": "$public_key", "shortIds": ["$short_id"]}
+    },
+    "sniffing": {"enabled": true, "destOverride": ["http", "tls"]}
+  }],
   "outbounds": [{"protocol": "freedom"}]
 }
 EOF
-
-    echo -e "${green}出口节点配置完成！${plain}"
-    echo "端口: $port | UUID: $uuid | Public Key: $public_key | Short ID: $short_id"
-    echo "伪装: $dest_domain"
+    echo -e "${green}出口配置完成！文件: $conf_file${plain}"
+    echo "UUID: $uuid | Public Key: $public_key | Short ID: $short_id"
 }
 
-# 配置中转节点 config
+# 配置中转节点（类似，生成json）
 config_transit() {
-    echo -e "${green}配置为中转节点（转发到出口）${plain}"
-    read -p "出口节点 IP: " landing_ip
-    read -p "出口节点端口: " landing_port
-    read -p "出口节点 UUID: " landing_uuid
-    read -p "出口节点 Public Key: " landing_pubkey
-    read -p "出口节点 Short ID: " landing_shortid
+    echo -e "${green}配置中转节点...${plain}"
+    read -p "出口IP: " landing_ip
+    read -p "出口端口: " landing_port
+    read -p "出口UUID: " landing_uuid
+    read -p "出口Public Key: " landing_pubkey
+    read -p "出口Short ID: " landing_shortid
 
-    read -p "中转入口端口 (推荐443): " transit_port
-    [[ -z "$transit_port" ]] && transit_port=443
+    transit_port=443
+    read -p "中转端口 (默认443): " input_port
+    [[ ! -z "$input_port" ]] && transit_port=$input_port
 
-    read -p "伪装网站 (建议与出口一致): " dest_domain
+    read -p "伪装网站 (默认 www.microsoft.com): " dest_domain
     [[ -z "$dest_domain" ]] && dest_domain="www.microsoft.com"
 
     transit_uuid=$(gen_uuid)
@@ -110,94 +97,86 @@ config_transit() {
     transit_public=$(echo $keypair | awk '{print $2}')
     transit_shortid=$(gen_shortid)
 
-    config_file="/etc/xray/conf/config.json"
-    [ ! -f "$config_file" ] && config_file="/usr/local/etc/xray/config.json"
-
-    cp "$config_file" "${config_file}.bak.$(date +%s)"
-
-    cat > "$config_file" <<EOF
+    conf_file="$CONF_DIR/VLESS-REALITY-TRANSIT-$transit_port.json"
+    cat > "$conf_file" <<EOF
 {
-  "log": {"loglevel": "warning"},
-  "inbounds": [
-    {
-      "port": $transit_port,
-      "protocol": "vless",
-      "settings": {
-        "clients": [{"id": "$transit_uuid", "flow": "xtls-rprx-vision"}],
-        "decryption": "none"
-      },
-      "streamSettings": {
-        "network": "tcp",
-        "security": "reality",
-        "realitySettings": {
-          "dest": "$dest_domain:443",
-          "serverNames": ["$dest_domain"],
-          "privateKey": "$transit_private",
-          "publicKey": "$transit_public",
-          "shortIds": ["$transit_shortid"]
-        }
-      },
-      "sniffing": {"enabled": true, "destOverride": ["http", "tls"]}
+  "inbounds": [{
+    "port": $transit_port,
+    "protocol": "vless",
+    "settings": {"clients": [{"id": "$transit_uuid", "flow": "xtls-rprx-vision"}], "decryption": "none"},
+    "streamSettings": {
+      "network": "tcp",
+      "security": "reality",
+      "realitySettings": {"dest": "$dest_domain:443", "serverNames": ["$dest_domain"], "privateKey": "$transit_private", "publicKey": "$transit_public", "shortIds": ["$transit_shortid"]}
+    },
+    "sniffing": {"enabled": true, "destOverride": ["http", "tls"]}
+  }],
+  "outbounds": [{
+    "tag": "to-landing",
+    "protocol": "vless",
+    "settings": {"vnext": [{"address": "$landing_ip", "port": $landing_port, "users": [{"id": "$landing_uuid", "flow": "xtls-rprx-vision", "encryption": "none"}]}]},
+    "streamSettings": {
+      "network": "tcp",
+      "security": "reality",
+      "realitySettings": {"dest": "$dest_domain:443", "serverNames": ["$dest_domain"], "privateKey": "$transit_private", "shortIds": ["$transit_shortid"]}
     }
-  ],
-  "outbounds": [
-    {
-      "tag": "to-landing",
-      "protocol": "vless",
-      "settings": {
-        "vnext": [
-          {
-            "address": "$landing_ip",
-            "port": $landing_port,
-            "users": [{"id": "$landing_uuid", "flow": "xtls-rprx-vision", "encryption": "none"}]
-          }
-        ]
-      },
-      "streamSettings": {
-        "network": "tcp",
-        "security": "reality",
-        "realitySettings": {
-          "dest": "$dest_domain:443",
-          "serverNames": ["$dest_domain"],
-          "privateKey": "$transit_private",
-          "shortIds": ["$landing_shortid"]
-        }
-      }
-    }
-  ],
-  "routing": {
-    "domainStrategy": "IPIfNonMatch",
-    "rules": [
-      {"type": "field", "outboundTag": "to-landing", "network": "tcp,udp"}
-    ]
-  }
+  }],
+  "routing": {"rules": [{"type": "field", "outboundTag": "to-landing", "network": "tcp,udp"}]}
 }
 EOF
-
-    echo -e "${green}中转节点配置完成！${plain}"
-    echo "入口端口: $transit_port | UUID: $transit_uuid | Public Key: $transit_public"
-    echo "Short ID: $transit_shortid | 伪装: $dest_domain"
+    echo -e "${green}中转配置完成！文件: $conf_file${plain}"
+    echo "UUID: $transit_uuid | Public Key: $transit_public | Short ID: $transit_shortid"
 }
 
-# 主菜单
-echo -e "${yellow}请选择节点类型：${plain}"
-echo "1. 配置为出口节点（统一出站）"
-echo "2. 配置为中转节点（指向出口）"
-echo "0. 只安装233boy，不改config"
-read -p "输入数字: " choice
+# 列表检查（从之前check脚本复制）
+list_configs() {
+    configs=($(ls "$CONF_DIR"/*.json 2>/dev/null))
+    if [[ ${#configs[@]} -eq 0 ]]; then
+        echo -e "${yellow}暂无配置！${plain}"
+        return
+    fi
 
-case $choice in
-    1) config_landing ;;
-    2) config_transit ;;
-    0) echo "已完成233boy安装，无改动。" ;;
-    *) echo "无效，选择默认不改。" ;;
-esac
+    echo -e "${green}配置列表：${plain}"
+    echo "序号 | 文件名 | 协议 | 端口 | 是否中转 | 出口IP"
+    i=1
+    for conf in "${configs[@]}"; do
+        filename=$(basename "$conf")
+        protocol=$(grep -oP '"protocol":\s*"\K[^"]+' "$conf" | head -1 || echo "-")
+        port=$(grep -oP '"port":\s*\K\d+' "$conf" | head -1 || echo "-")
+        has_relay=$(grep -q '"tag":\s*"to-landing"' "$conf" && echo "是" || echo "否")
+        outbound_ip=$(grep -oP '"address":\s*"\K[^"]+' "$conf" | head -1 || echo "-")
+        printf "%-4s | %-30s | %-8s | %-6s | %-8s | %s\n" "$i" "$filename" "$protocol" "$port" "$has_relay" "$outbound_ip"
+        ((i++))
+    done
+}
 
-# 重启并提示
-systemctl restart xray
-echo -e "${green}全部完成！Xray已重启。${plain}"
-echo "用 'xray' 命令管理（add/del/info/qr/url 等）"
-echo "查看状态: systemctl status xray"
-echo "日志: journalctl -u xray -f"
-echo "如果config路径不对，手动检查 /etc/xray/conf/ 或 /usr/local/etc/xray/"
-echo "测试连通后，客户端加多个中转节点即可（出口IP固定）"
+# 主菜单（扩展233boy风格）
+main_menu() {
+    xray  # 先显示原233boy菜单
+    echo -e "${yellow}=== 集群扩展菜单 ===${plain}"
+    echo "11. 配置出口节点"
+    echo "12. 配置中转节点"
+    echo "13. 列表检查配置（relay）"
+    echo "14. 查看日志摘要"
+    echo "0. 退出"
+    read -p "选择: " choice
+
+    case $choice in
+        11) config_landing; xray restart ;;
+        12) config_transit; xray restart ;;
+        13) list_configs ;;
+        14) tail -n 20 /var/log/xray/error.log; echo ""; tail -n 10 /var/log/xray/access.log ;;
+        0) exit 0 ;;
+        *) echo "调用原xray命令..."; xray $choice ;;
+    esac
+    main_menu  # 循环
+}
+
+# 安装扩展：创建 /usr/local/bin/xray-cluster
+cat > /usr/local/bin/xray-cluster <<EOF
+#!/bin/bash
+main_menu "\\\$@"
+EOF
+chmod +x /usr/local/bin/xray-cluster
+
+echo -e "${green}整合完成！用 'xray-cluster' 命令管理（原菜单 + 集群扩展）。${plain}"
