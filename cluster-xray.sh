@@ -31,9 +31,9 @@ gen_uuid() {
 }
 
 gen_keypair() {
-    echo -e "${green}自动生成 Reality keypair...${plain}"
+    echo -e "${green}生成 Reality keypair...${plain}"
     keypair_raw=$($XRAY_BIN x25519 2>/dev/null)
-    echo -e "${yellow}原始输出 (请复制完整Private/Public key):${plain}"
+    echo -e "${yellow}原始输出 (请从这里复制完整 Private key 和 Public key):${plain}"
     echo "$keypair_raw"
 
     private_key=$(echo "$keypair_raw" | grep -i "private" | sed 's/.*://g;s/ //g;s/\r//g')
