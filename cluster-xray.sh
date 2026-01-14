@@ -19,7 +19,7 @@ fi
 gen_uuid() {
     if ! command -v uuidgen >/dev/null 2>&1; then
         echo -e "${yellow}uuidgen 未安装！${plain}"
-        read -p "是否自动安装 uuid-runtime？(y/n，默认y): " ch
+        read -p "自动安装 uuid-runtime？(y/n，默认y): " ch
         ch=${ch:-y}
         [[ "$ch" == "y" || "$ch" == "Y" ]] && apt update && apt install uuid-runtime -y
         if ! command -v uuidgen >/dev/null 2>&1; then
@@ -32,20 +32,14 @@ gen_uuid() {
 
 gen_keypair() {
     keypair=$($XRAY_BIN x25519 2>/dev/null)
-    if [[ -z "$keypair" ]]; then
-        echo -e "${red}x25519 生成失败！请手动检查 Xray。${plain}" >&2
-        exit 1
-    fi
-    private_key=$(echo "$keypair" | grep -i "private key" | awk '{print $3}')
-    public_key=$(echo "$keypair" | grep -i "public key" | awk '{print $3}')
+    private_key=$(echo "$keypair" | grep -i "private" | awk '{print $3}')
+    public_key=$(echo "$keypair" | grep -i "public" | awk '{print $3}')
     if [[ -z "$private_key" || -z "$public_key" ]]; then
-        echo -e "${yellow}keypair 解析失败！${plain}"
-        echo "请手动运行: $XRAY_BIN x25519"
-        echo "复制 Private key 和 Public key"
-        read -p "输入 Private key: " private_key
-        read -p "输入 Public key: " public_key
+        echo -e "${yellow}keypair 自动生成失败！请手动输入${plain}"
+        read -p "Private key: " private_key
+        read -p "Public key: " public_key
         if [[ -z "$private_key" || -z "$public_key" ]]; then
-            echo -e "${red}用户未输入 key，退出。${plain}"
+            echo -e "${red}未输入 key，退出${plain}"
             exit 1
         fi
     fi
@@ -54,16 +48,51 @@ gen_keypair() {
 
 gen_shortid() { openssl rand -hex 8; }
 
-# config_landing 函数（同上，略，保持不变）
+config_landing() {
+    echo -e "${green}配置出口节点${plain}"
+    port=$(($RANDOM % 50000 + 10000))
+    read -p "端口 (默认 $port): " port_input && [[ -n "$port_input" ]] && port=$port_input
 
-# ... config_transit 函数同上
+    uuid=$(gen_uuid)
+    keypair=$(gen_keypair)
+    private_key=$(echo $keypair | awk '{print $1}')
+    public_key=$(echo $keypair | awk '{print $2}')
+    short_id=$(gen_shortid)
 
-# 菜单部分同上
+    read -p "伪装网站 (默认 www.microsoft.com): " dest && [[ -z "$dest" ]] && dest="www.microsoft.com"
 
-# 在配置函数末尾加 key 检查（示例在 config_landing 后加）
-if [[ "$choice" == "1" ]]; then
     conf_file="$CONF_DIR/VLESS-REALITY-EXPORT-$port.json"
-    if grep -q '"privateKey": ""' "$conf_file" || grep -q '"publicKey": ""' "$conf_file"; then
-        echo -e "${yellow}文件 key 为空！请手动补：nano $conf_file${plain}"
-    fi
-fi
+    cat > "$conf_file" <<EOF
+{
+  "inbounds": [{
+    "port": $port,
+    "protocol": "vless",
+    "settings": {"clients": [{"id": "$uuid", "flow": "xtls-rprx-vision"}], "decryption": "none"},
+    "streamSettings": {"network": "tcp", "security": "reality", "realitySettings": {"dest": "$dest:443", "serverNames": ["$dest"], "privateKey": "$private_key", "publicKey": "$public_key", "shortIds": ["$short_id"]}},
+    "sniffing": {"enabled": true, "destOverride": ["http", "tls"]}
+  }],
+  "outbounds": [{"protocol": "freedom"}]
+}
+EOF
+    echo -e "${green}完成！文件: $conf_file${plain}"
+    echo "UUID: $uuid"
+    echo "Public Key: $public_key"
+    echo "Short ID: $short_id"
+    echo "端口: $port"
+    systemctl restart xray || $XRAY_BIN restart
+}
+
+echo -e "${yellow}集群脚本菜单${plain}"
+echo "1. 配置出口节点"
+echo "2. 退出（中转后面再加）"
+read -p "选择: " choice
+
+case $choice in
+    1) config_landing ;;
+    2) exit 0 ;;
+    *) echo "无效" ;;
+esac
+
+echo -e "${green}完成！服务已重启。"
+echo "检查: ls $CONF_DIR && cat $CONF_DIR/VLESS-REALITY-*.json"
+echo "用 'xray' 进入原菜单。"
