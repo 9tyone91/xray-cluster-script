@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# 颜色定义
+# 颜色定义（已修复转义）
 red='\033[0;31m'
 green='\033[0;32m'
 yellow='\033[0;33m'
@@ -18,13 +18,31 @@ if [[ ! -d "$CONF_DIR" ]]; then
     $XRAY_BIN restart
 fi
 
-gen_uuid() { uuidgen; }
+# 工具函数（已修复uuidgen缺失判断）
+gen_uuid() {
+    if command -v uuidgen >/dev/null 2>&1; then
+        uuidgen
+    else
+        echo "uuidgen 未安装，请运行: apt install uuid-runtime -y" >&2
+        exit 1
+    fi
+}
+
 gen_keypair() {
-    keypair=$($XRAY_BIN x25519)
-    private_key=$(echo "$keypair" | grep "Private" | awk '{print $3}')
-    public_key=$(echo "$keypair" | grep "Public" | awk '{print $3}')
+    if [[ ! -x "$XRAY_BIN" ]]; then
+        echo -e "${red}Xray 二进制未找到！路径: $XRAY_BIN${plain}" >&2
+        exit 1
+    fi
+    keypair=$($XRAY_BIN x25519 2>/dev/null)
+    if [[ -z "$keypair" ]]; then
+        echo -e "${red}x25519 生成失败！请检查 Xray 版本。${plain}" >&2
+        exit 1
+    fi
+    private_key=$(echo "$keypair" | grep -i "Private key" | awk '{print $3}')
+    public_key=$(echo "$keypair" | grep -i "Public key" | awk '{print $3}')
     echo "$private_key $public_key"
 }
+
 gen_shortid() { openssl rand -hex 8; }
 
 config_landing() {
@@ -54,8 +72,12 @@ config_landing() {
 }
 EOF
     echo -e "${green}出口完成！文件: $conf_file${plain}"
-    echo "UUID: $uuid | Pub Key: $public_key"
-    $XRAY_BIN restart
+    echo "UUID: $uuid"
+    echo "Public Key: $public_key"
+    echo "Short ID: $short_id"
+    echo "端口: $port"
+    echo "伪装: $dest"
+    $XRAY_BIN restart || systemctl restart xray
 }
 
 config_transit() {
@@ -63,13 +85,13 @@ config_transit() {
     read -p "出口IP: " landing_ip
     read -p "出口端口: " landing_port
     read -p "出口UUID: " landing_uuid
-    read -p "出口Pub Key: " landing_pubkey
+    read -p "出口Public Key: " landing_pubkey
     read -p "出口Short ID: " landing_shortid
 
     transit_port=443
     read -p "中转端口 (默认443): " tport && [[ -n "$tport" ]] && transit_port=$tport
 
-    read -p "伪装网站: " dest && [[ -z "$dest" ]] && dest="www.microsoft.com"
+    read -p "伪装网站 (默认 www.microsoft.com): " dest && [[ -z "$dest" ]] && dest="www.microsoft.com"
 
     transit_uuid=$(gen_uuid)
     keypair=$(gen_keypair)
@@ -97,8 +119,10 @@ config_transit() {
 }
 EOF
     echo -e "${green}中转完成！文件: $conf_file${plain}"
-    echo "UUID: $transit_uuid | Pub Key: $transit_public"
-    $XRAY_BIN restart
+    echo "UUID: $transit_uuid"
+    echo "Public Key: $transit_public"
+    echo "Short ID: $transit_shortid"
+    $XRAY_BIN restart || systemctl restart xray
 }
 
 echo -e "${yellow}集群脚本菜单${plain}"
@@ -111,8 +135,10 @@ case $choice in
     1) config_landing ;;
     2) config_transit ;;
     3) exit 0 ;;
-    *) echo "无效" ;;
+    *) echo "无效选择" ;;
 esac
 
-echo -e "${green}完成！检查配置: ls $CONF_DIR && cat $CONF_DIR/*.json${plain}"
-echo "用 'xray' 进入原菜单管理。配置后服务已重启。"
+echo -e "${green}完成！服务已重启。"
+echo "检查配置: ls $CONF_DIR"
+echo "查看具体文件: cat $CONF_DIR/VLESS-REALITY-*.json"
+echo "用 'xray' 进入原菜单管理。"
