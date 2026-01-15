@@ -27,19 +27,26 @@ gen_uuid() {
 gen_keypair() {
     echo -e "${green}自动生成 Reality keypair...${plain}"
     local keypair_raw=$($XRAY_BIN x25519 2>/dev/null)
-    local private_key=$(echo "$keypair_raw" | grep -i "private" | sed 's/.*://g;s/ //g' | tr -d '\r\n')
-    local public_key=$(echo "$keypair_raw" | grep -i "public" | sed 's/.*://g;s/ //g' | tr -d '\r\n')
 
-    # 如果自动提取失败，自动生成一个随机 keypair（模拟 X25519 格式，65字符base64）
-    if [[ -z "$private_key" || -z "$public_key" ]]; then
-        echo -e "${yellow}Xray x25519 输出异常，使用自动随机 keypair${plain}"
-        private_key=$(openssl rand -base64 48 | tr -d '\n' | cut -c1-43)  # 模拟65字符
-        public_key=$(openssl rand -base64 48 | tr -d '\n' | cut -c1-43)
+    # 打印原始完整输出（你从这里看清 key）
+    echo -e "${yellow}原始完整输出（请查看 Private/Public key）：${plain}"
+    echo "$keypair_raw"
+
+    # 最宽松提取：找包含 "private" 或 "public" 的行，取冒号后所有内容
+    private_key=$(echo "$keypair_raw" | grep -i "private" | cut -d':' -f2- | sed 's/^ *//;s/ *$//')
+    public_key=$(echo "$keypair_raw" | grep -i "public" | cut -d':' -f2- | sed 's/^ *//;s/ *$//')
+
+    # 如果提取失败，使用原始输出作为 fallback（完整字符串）
+    if [[ -z "$private_key" ]]; then
+        private_key=$(echo "$keypair_raw" | grep -i "private" | cut -d':' -f2-)
+    fi
+    if [[ -z "$public_key" ]]; then
+        public_key=$(echo "$keypair_raw" | grep -i "public" | cut -d':' -f2-)
     fi
 
-    # 强制完整显示
-    echo -e "${green}Private Key (服务器用): $private_key${plain}"
-    echo -e "${green}Public Key (客户端pbk用): $public_key${plain}"
+    # 最终强制显示
+    echo -e "${green}提取的 Private Key: $private_key${plain}"
+    echo -e "${green}提取的 Public Key: $public_key${plain}"
 
     echo "$private_key $public_key"
 }
