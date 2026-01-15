@@ -8,10 +8,10 @@ bold='\033[1m'
 
 [[ $EUID -ne 0 ]] && echo -e "${red}${bold}错误：必须root运行！${plain}" && exit 1
 
-# 先安装 uuidgen，避免中途干扰
-if ! command -v uuidgen >/dev/null 2&1; then
+# 先检查并安装 uuidgen，避免中途干扰
+if ! command -v uuidgen >/dev/null 2>&1; then
     echo -e "${yellow}安装 uuidgen...${plain}"
-    apt update && apt install uuid-runtime -y
+    apt update -qq && apt install -y uuid-runtime
 fi
 
 CONF_DIR="/etc/xray/conf"
@@ -44,8 +44,8 @@ config_node() {
 
     local port
     if [[ $is_transit -eq 1 ]]; then
-        port=$(($RANDOM % 50000 + 10000))  # 随机高位端口
-        read -p "中转端口 (默认 $port, 推荐随机高位避免雨云挡): " port_input && [[ -n "$port_input" ]] && port=$port_input
+        port=$(($RANDOM % 40000 + 20000))  # 随机高位端口 20000-60000
+        read -p "中转端口 (默认 $port，推荐随机高位): " port_input && [[ -n "$port_input" ]] && port=$port_input
     else
         port=$(($RANDOM % 50000 + 10000))
         read -p "端口 (默认 $port): " port_input && [[ -n "$port_input" ]] && port=$port_input
