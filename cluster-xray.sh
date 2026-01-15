@@ -8,19 +8,22 @@ bold='\033[1m'
 
 [[ $EUID -ne 0 ]] && echo -e "${red}${bold}错误：必须root运行！${plain}" && exit 1
 
+# 先安装 uuidgen，避免中途干扰
+if ! command -v uuidgen >/dev/null 2>&1; then
+    echo -e "${yellow}安装 uuidgen...${plain}"
+    apt update && apt install uuid-runtime -y
+fi
+
 CONF_DIR="/etc/xray/conf"
 XRAY_BIN="/etc/xray/bin/xray"
 
 if [[ ! -d "$CONF_DIR" ]]; then
-    echo -e "${green}正在安装 233boy Xray...${plain}"
+    echo -e "${green}安装 233boy Xray...${plain}"
     bash <(wget -qO- https://github.com/233boy/Xray/raw/main/install.sh) || exit 1
     sleep 5
 fi
 
 gen_uuid() {
-    if ! command -v uuidgen >/dev/null 2>&1; then
-        apt update && apt install uuid-runtime -y
-    fi
     uuidgen
 }
 
@@ -41,8 +44,8 @@ config_node() {
 
     local port
     if [[ $is_transit -eq 1 ]]; then
-        port=443
-        read -p "中转端口 (默认 443): " port_input && [[ -n "$port_input" ]] && port=$port_input
+        port=2053  # 推荐非标准端口，避免雨云挡 443
+        read -p "中转端口 (推荐 2053，避免 443 被挡，默认 2053): " port_input && [[ -n "$port_input" ]] && port=$port_input
     else
         port=$(($RANDOM % 50000 + 10000))
         read -p "端口 (默认 $port): " port_input && [[ -n "$port_input" ]] && port=$port_input
@@ -110,10 +113,7 @@ EOF
 EOF
     fi
 
-    # 自动检测服务器 IP
     local server_ip=$(curl -s ifconfig.me || echo "你的服务器IP")
-
-    # 生成 vless 链接
     local vless_link="vless://$uuid@$server_ip:$port?encryption=none&security=reality&pbk=$public_key&fp=chrome&type=tcp&flow=xtls-rprx-vision&sni=$dest&sid=$short_id#${node_type}节点"
 
     echo -e "\n${green}${bold}===== $node_type 节点配置完成 =====${plain}\n"
@@ -126,7 +126,7 @@ EOF
     echo "  Public Key    : $public_key"
 
     echo -e "\n${green}完整 vless 链接（直接复制导入客户端）：${plain}"
-    echo "$vless_link"
+    echo -e "${bold}$vless_link${plain}"
 
     echo -e "\n${yellow}防火墙提示（如果未开端口，请执行）：${plain}"
     echo "ufw allow $port/tcp || iptables -A INPUT -p tcp --dport $port -j ACCEPT && iptables-save > /etc/iptables.rules"
