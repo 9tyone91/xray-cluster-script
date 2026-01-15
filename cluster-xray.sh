@@ -113,6 +113,7 @@ config_transit() {
 
     echo -e "${green}你输入的 Private Key: $transit_private${plain}"
     echo -e "${green}你输入的 Public Key: $transit_public${plain}"
+    echo -e "${green}中转 Short ID: $short_id${plain}"
 
     conf_file="$CONF_DIR/VLESS-REALITY-TRANSIT-$transit_port.json"
     cat > "$conf_file" <<EOF
@@ -134,8 +135,13 @@ config_transit() {
 }
 EOF
     echo -e "${green}完成！文件: $conf_file${plain}"
-    echo "UUID: $transit_uuid"
-    echo "Short ID: $short_id"
+    echo "中转 UUID: $transit_uuid"
+    echo "中转 Short ID: $short_id"
+
+    # 自动生成中转 vless 链接
+    transit_ip=$(curl -s ifconfig.me || echo "你的中转服务器IP")
+    echo -e "${yellow}完整中转 vless 链接（客户端直接连接中转，IP固定出口）:${plain}"
+    echo "vless://$transit_uuid@$transit_ip:$transit_port?encryption=none&security=reality&pbk=$transit_public&fp=chrome&type=tcp&flow=xtls-rprx-vision&sni=$dest&sid=$short_id#中转节点（固定出口IP）"
 
     echo -e "${yellow}请开防火墙端口（如果未开）：${plain}"
     echo "ufw allow $transit_port/tcp || iptables -A INPUT -p tcp --dport $transit_port -j ACCEPT && iptables-save > /etc/iptables.rules"
