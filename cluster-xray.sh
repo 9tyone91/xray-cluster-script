@@ -8,6 +8,12 @@ bold='\033[1m'
 
 [[ $EUID -ne 0 ]] && echo -e "${red}${bold}错误：必须root运行！${plain}" && exit 1
 
+# 先安装 uuidgen
+if ! command -v uuidgen >/dev/null 2>&1; then
+    echo -e "${yellow}安装 uuidgen...${plain}"
+    apt update -qq && apt install -y uuid-runtime
+fi
+
 CONF_DIR="/etc/xray/conf"
 XRAY_BIN="/etc/xray/bin/xray"
 
@@ -18,10 +24,6 @@ if [[ ! -d "$CONF_DIR" ]]; then
 fi
 
 gen_uuid() {
-    if ! command -v uuidgen >/dev/null 2>&1; then
-        echo -e "${yellow}安装 uuidgen...${plain}"
-        apt update -qq && apt install -y uuid-runtime
-    fi
     uuidgen
 }
 
@@ -31,55 +33,6 @@ gen_shortid() {
         sid=$(openssl rand -hex 8)
     done
     echo "$sid"
-}
-
-view_configs() {
-    echo -e "\n${green}${bold}===== 查看已配置节点信息 =====${plain}\n"
-
-    # 查找所有出口文件（按时间降序）
-    local export_files=$(ls -t $CONF_DIR/VLESS-REALITY-EXPORT-*.json 2>/dev/null)
-    if [[ -n "$export_files" ]]; then
-        echo -e "${yellow}出口节点（EXPORT）：${plain}"
-        for file in $export_files; do
-            echo -e "\n${bold}文件: $file${plain}"
-            jq -r '
-            "端口: \(.inbounds[0].port)",
-            "UUID: \(.inbounds[0].settings.clients[0].id)",
-            "Short ID: \(.inbounds[0].streamSettings.realitySettings.shortIds[0])",
-            "伪装网站: \(.inbounds[0].streamSettings.realitySettings.dest | split(":")[0])",
-            "Public Key: \(.inbounds[0].streamSettings.realitySettings.publicKey)",
-            "Private Key: \(.inbounds[0].streamSettings.realitySettings.privateKey)"
-            ' "$file" 2>/dev/null || echo "无法解析该文件（格式异常）"
-        done
-    else
-        echo "暂无出口节点配置"
-    fi
-
-    # 查找所有中转文件（按时间降序）
-    local transit_files=$(ls -t $CONF_DIR/VLESS-REALITY-TRANSIT-*.json 2>/dev/null)
-    if [[ -n "$transit_files" ]]; then
-        echo -e "\n${yellow}中转节点（TRANSIT）：${plain}"
-        for file in $transit_files; do
-            echo -e "\n${bold}文件: $file${plain}"
-            jq -r '
-            "端口: \(.inbounds[0].port)",
-            "UUID: \(.inbounds[0].settings.clients[0].id)",
-            "Short ID: \(.inbounds[0].streamSettings.realitySettings.shortIds[0])",
-            "伪装网站: \(.inbounds[0].streamSettings.realitySettings.dest | split(":")[0])",
-            "Public Key: \(.inbounds[0].streamSettings.realitySettings.publicKey)",
-            "Private Key: \(.inbounds[0].streamSettings.realitySettings.privateKey)",
-            "出口IP: \(.outbounds[0].settings.vnext[0].address)",
-            "出口端口: \(.outbounds[0].settings.vnext[0].port)"
-            ' "$file" 2>/dev/null || echo "无法解析该文件（格式异常）"
-        done
-    else
-        echo "暂无中转节点配置"
-    fi
-
-    echo -e "\n${yellow}查看原始文件命令：${plain}"
-    echo "ls -lt $CONF_DIR/VLESS-REALITY-* | head -n 10"
-    echo "cat $CONF_DIR/VLESS-REALITY-EXPORT-*.json   # 出口"
-    echo "cat $CONF_DIR/VLESS-REALITY-TRANSIT-*.json   # 中转"
 }
 
 config_node() {
@@ -101,8 +54,8 @@ config_node() {
     local uuid=$(gen_uuid)
     local short_id=$(gen_shortid)
 
-    local dest
-    read -p "伪装网站 (默认 www.microsoft.com): " dest && [[ -z "$dest" ]] && dest="www.microsoft.com"
+    local dest="www.bing.com"
+    read -p "伪装网站 (默认 www.bing.com): " dest_input && [[ -n "$dest_input" ]] && dest=$dest_input
 
     echo -e "${yellow}请手动输入 Reality keypair（推荐先运行 $XRAY_BIN x25519 获取）：${plain}"
     read -p "Private key (服务器用): " private_key
@@ -195,7 +148,72 @@ show_menu() {
         *) echo "无效选择" ;;
     esac
 
-    # 循环菜单
+    show_menu
+}
+
+view_configs() {
+    echo -e "\n${green}${bold}===== 查看已配置节点信息 =====${plain}\n"
+
+    local export_files=$(ls -t $CONF_DIR/VLESS-REALITY-EXPORT-*.json 2>/dev/null)
+    if [[ -n "$export_files" ]]; then
+        echo -e "${yellow}出口节点（EXPORT）：${plain}"
+        for file in $export_files; do
+            echo -e "\n${bold}文件: $file${plain}"
+            jq -r '
+            "端口: \(.inbounds[0].port)",
+            "UUID: \(.inbounds[0].settings.clients[0].id)",
+            "Short ID: \(.inbounds[0].streamSettings.realitySettings.shortIds[0])",
+            "伪装网站: \(.inbounds[0].streamSettings.realitySettings.dest | split(":")[0])",
+            "Public Key: \(.inbounds[0].streamSettings.realitySettings.publicKey)",
+            "Private Key: \(.inbounds[0].streamSettings.realitySettings.privateKey)"
+            ' "$file" 2>/dev/null || echo "无法解析该文件"
+        done
+    else
+        echo "暂无出口节点配置"
+    fi
+
+    local transit_files=$(ls -t $CONF_DIR/VLESS-REALITY-TRANSIT-*.json 2>/dev/null)
+    if [[ -n "$transit_files" ]]; then
+        echo -e "\n${yellow}中转节点（TRANSIT）：${plain}"
+        for file in $transit_files; do
+            echo -e "\n${bold}文件: $file${plain}"
+            jq -r '
+            "端口: \(.inbounds[0].port)",
+            "UUID: \(.inbounds[0].settings.clients[0].id)",
+            "Short ID: \(.inbounds[0].streamSettings.realitySettings.shortIds[0])",
+            "伪装网站: \(.inbounds[0].streamSettings.realitySettings.dest | split(":")[0])",
+            "Public Key: \(.inbounds[0].streamSettings.realitySettings.publicKey)",
+            "Private Key: \(.inbounds[0].streamSettings.realitySettings.privateKey)",
+            "出口IP: \(.outbounds[0].settings.vnext[0].address // "freedom")",
+            "出口端口: \(.outbounds[0].settings.vnext[0].port // "无")"
+            ' "$file" 2>/dev/null || echo "无法解析该文件"
+        done
+    else
+        echo "暂无中转节点配置"
+    fi
+
+    echo -e "\n${yellow}查看原始文件命令：${plain}"
+    echo "ls -lt $CONF_DIR/VLESS-REALITY-* | head -n 10"
+    echo "cat $CONF_DIR/VLESS-REALITY-EXPORT-*.json   # 出口"
+    echo "cat $CONF_DIR/VLESS-REALITY-TRANSIT-*.json   # 中转"
+}
+
+show_menu() {
+    echo -e "\n${green}${bold}233boy Xray 集群脚本${plain}\n"
+    echo "1. 配置出口节点"
+    echo "2. 配置中转节点"
+    echo "3. 查看已配置节点信息"
+    echo "4. 退出"
+    read -p "选择: " choice
+
+    case $choice in
+        1) config_node "出口" ;;
+        2) config_node "中转" ;;
+        3) view_configs ;;
+        4) exit 0 ;;
+        *) echo "无效选择" ;;
+    esac
+
     show_menu
 }
 
