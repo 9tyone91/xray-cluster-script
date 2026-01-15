@@ -27,21 +27,31 @@ gen_uuid() {
 gen_shortid() {
     local sid
     sid=$(openssl rand -hex 8)
-    # 确保纯 hex，长度 16 位
     while [[ ! $sid =~ ^[0-9a-fA-F]{16}$ ]]; do
         sid=$(openssl rand -hex 8)
     done
     echo "$sid"
 }
 
-config_landing() {
-    echo -e "${green}配置出口节点${plain}"
-    port=$(($RANDOM % 50000 + 10000))
-    read -p "端口 (默认 $port): " port_input && [[ -n "$port_input" ]] && port=$port_input
+config_node() {
+    local node_type="$1"  # "出口" or "中转"
+    local is_transit=0
+    [[ "$node_type" == "中转" ]] && is_transit=1
 
-    uuid=$(gen_uuid)
-    short_id=$(gen_shortid)
+    echo -e "${green}配置${node_type}节点${plain}"
+    local port
+    if [[ $is_transit -eq 1 ]]; then
+        port=443
+        read -p "中转端口 (默认443): " port_input && [[ -n "$port_input" ]] && port=$port_input
+    else
+        port=$(($RANDOM % 50000 + 10000))
+        read -p "端口 (默认 $port): " port_input && [[ -n "$port_input" ]] && port=$port_input
+    fi
 
+    local uuid=$(gen_uuid)
+    local short_id=$(gen_shortid)
+
+    local dest
     read -p "伪装网站 (默认 www.microsoft.com): " dest && [[ -z "$dest" ]] && dest="www.microsoft.com"
 
     echo -e "${yellow}请先运行 $XRAY_BIN x25519 获取 key，然后粘贴：${plain}"
@@ -57,8 +67,42 @@ config_landing() {
     echo -e "${green}你输入的 Public Key: $public_key${plain}"
     echo -e "${green}Short ID: $short_id${plain}"
 
-    conf_file="$CONF_DIR/VLESS-REALITY-EXPORT-$port.json"
-    cat > "$conf_file" <<EOF
+    local conf_file
+    if [[ $is_transit -eq 1 ]]; then
+        conf_file="$CONF_DIR/VLESS-REALITY-TRANSIT-$port.json"
+    else
+        conf_file="$CONF_DIR/VLESS-REALITY-EXPORT-$port.json"
+    fi
+
+    local config_content
+    if [[ $is_transit -eq 1 ]]; then
+        read -p "出口IP: " landing_ip
+        read -p "出口端口: " landing_port
+        read -p "出口UUID: " landing_uuid
+        read -p "出口Public Key: " landing_pubkey
+        read -p "出口Short ID: " landing_shortid
+
+        config_content=$(cat <<EOF
+{
+  "inbounds": [{
+    "port": $port,
+    "protocol": "vless",
+    "settings": {"clients": [{"id": "$uuid", "flow": "xtls-rprx-vision"}], "decryption": "none"},
+    "streamSettings": {"network": "tcp", "security": "reality", "realitySettings": {"dest": "$dest:443", "serverNames": ["$dest"], "privateKey": "$private_key", "publicKey": "$public_key", "shortIds": ["$short_id"]}},
+    "sniffing": {"enabled": true, "destOverride": ["http", "tls"]}
+  }],
+  "outbounds": [{
+    "tag": "to-landing",
+    "protocol": "vless",
+    "settings": {"vnext": [{"address": "$landing_ip", "port": $landing_port, "users": [{"id": "$landing_uuid", "flow": "xtls-rprx-vision", "encryption": "none"}]}]},
+    "streamSettings": {"network": "tcp", "security": "reality", "realitySettings": {"dest": "$dest:443", "serverNames": ["$dest"], "privateKey": "$private_key", "shortIds": ["$landing_shortid"]}}
+  }],
+  "routing": {"rules": [{"type": "field", "outboundTag": "to-landing", "network": "tcp,udp"}]}
+}
+EOF
+)
+    else
+        config_content=$(cat <<EOF
 {
   "inbounds": [{
     "port": $port,
@@ -70,81 +114,29 @@ config_landing() {
   "outbounds": [{"protocol": "freedom"}]
 }
 EOF
+)
+    fi
+
+    echo "$config_content" > "$conf_file"
     echo -e "${green}完成！文件: $conf_file${plain}"
     echo "UUID: $uuid"
     echo "Short ID: $short_id"
     echo "端口: $port"
     echo "伪装: $dest"
 
-    server_ip=$(curl -s ifconfig.me || echo "你的服务器IP")
+    local server_ip=$(curl -s ifconfig.me || echo "你的服务器IP")
+    local link
+    if [[ $is_transit -eq 1 ]]; then
+        link="vless://$uuid@$server_ip:$port?encryption=none&security=reality&pbk=$public_key&fp=chrome&type=tcp&flow=xtls-rprx-vision&sni=$dest&sid=$short_id#中转节点（固定出口IP）"
+    else
+        link="vless://$uuid@$server_ip:$port?encryption=none&security=reality&pbk=$public_key&fp=chrome&type=tcp&flow=xtls-rprx-vision&sni=$dest&sid=$short_id#出口节点"
+    fi
+
     echo -e "${yellow}完整 vless 链接（直接复制导入客户端）:${plain}"
-    echo "vless://$uuid@$server_ip:$port?encryption=none&security=reality&pbk=$public_key&fp=chrome&type=tcp&flow=xtls-rprx-vision&sni=$dest&sid=$short_id#出口节点"
+    echo "$link"
 
     echo -e "${yellow}请开防火墙端口（如果未开）：${plain}"
     echo "ufw allow $port/tcp || iptables -A INPUT -p tcp --dport $port -j ACCEPT && iptables-save > /etc/iptables.rules"
-
-    systemctl restart xray || $XRAY_BIN restart
-}
-
-config_transit() {
-    echo -e "${green}配置中转节点${plain}"
-    read -p "出口IP: " landing_ip
-    read -p "出口端口: " landing_port
-    read -p "出口UUID: " landing_uuid
-    read -p "出口Public Key: " landing_pubkey
-    read -p "出口Short ID: " landing_shortid
-
-    transit_port=443
-    read -p "中转端口 (默认443): " tport && [[ -n "$tport" ]] && transit_port=$tport
-
-    read -p "伪装网站 (默认 www.microsoft.com): " dest && [[ -z "$dest" ]] && dest="www.microsoft.com"
-
-    transit_uuid=$(gen_uuid)
-    short_id=$(gen_shortid)
-
-    echo -e "${yellow}请手动输入中转节点的 Reality key（推荐复用出口的）：${plain}"
-    read -p "Private key (服务器用): " transit_private
-    read -p "Public key (客户端pbk用): " transit_public
-
-    if [[ -z "$transit_private" || -z "$transit_public" ]]; then
-        echo -e "${red}key 未输入，退出${plain}"
-        exit 1
-    fi
-
-    echo -e "${green}你输入的 Private Key: $transit_private${plain}"
-    echo -e "${green}你输入的 Public Key: $transit_public${plain}"
-    echo -e "${green}中转 Short ID: $short_id${plain}"
-
-    conf_file="$CONF_DIR/VLESS-REALITY-TRANSIT-$transit_port.json"
-    cat > "$conf_file" <<EOF
-{
-  "inbounds": [{
-    "port": $transit_port,
-    "protocol": "vless",
-    "settings": {"clients": [{"id": "$transit_uuid", "flow": "xtls-rprx-vision"}], "decryption": "none"},
-    "streamSettings": {"network": "tcp", "security": "reality", "realitySettings": {"dest": "$dest:443", "serverNames": ["$dest"], "privateKey": "$transit_private", "publicKey": "$transit_public", "shortIds": ["$short_id"]}},
-    "sniffing": {"enabled": true, "destOverride": ["http", "tls"]}
-  }],
-  "outbounds": [{
-    "tag": "to-landing",
-    "protocol": "vless",
-    "settings": {"vnext": [{"address": "$landing_ip", "port": $landing_port, "users": [{"id": "$landing_uuid", "flow": "xtls-rprx-vision", "encryption": "none"}]}]},
-    "streamSettings": {"network": "tcp", "security": "reality", "realitySettings": {"dest": "$dest:443", "serverNames": ["$dest"], "privateKey": "$transit_private", "shortIds": ["$landing_shortid"]}}
-  }],
-  "routing": {"rules": [{"type": "field", "outboundTag": "to-landing", "network": "tcp,udp"}]}
-}
-EOF
-    echo -e "${green}完成！文件: $conf_file${plain}"
-    echo "中转 UUID: $transit_uuid"
-    echo "中转 Short ID: $short_id"
-
-    # 自动生成中转 vless 链接
-    transit_ip=$(curl -s ifconfig.me || echo "你的中转服务器IP")
-    echo -e "${yellow}完整中转 vless 链接（客户端直接连接中转，IP固定出口）:${plain}"
-    echo "vless://$transit_uuid@$transit_ip:$transit_port?encryption=none&security=reality&pbk=$transit_public&fp=chrome&type=tcp&flow=xtls-rprx-vision&sni=$dest&sid=$short_id#中转节点（固定出口IP）"
-
-    echo -e "${yellow}请开防火墙端口（如果未开）：${plain}"
-    echo "ufw allow $transit_port/tcp || iptables -A INPUT -p tcp --dport $transit_port -j ACCEPT && iptables-save > /etc/iptables.rules"
 
     systemctl restart xray || $XRAY_BIN restart
 }
@@ -156,8 +148,8 @@ echo "3. 退出"
 read -p "选择: " choice
 
 case $choice in
-    1) config_landing ;;
-    2) config_transit ;;
+    1) config_node "出口" ;;
+    2) config_node "中转" ;;
     3) exit 0 ;;
     *) echo "无效选择" ;;
 esac
