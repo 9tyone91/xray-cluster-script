@@ -85,14 +85,14 @@ config_node() {
   "inbounds": [{
     "port": $port,
     "protocol": "vless",
-    "settings": {"clients": [{"id": "$uuid", "flow": "xtls-rprx-vision"}], "decryption": "none"},
+    "settings": {"clients": [{"id": "$uuid", "flow": ""}], "decryption": "none"},
     "streamSettings": {"network": "tcp", "security": "reality", "realitySettings": {"dest": "$dest:443", "serverNames": ["$dest"], "privateKey": "$private_key", "publicKey": "$public_key", "shortIds": ["$short_id"]}},
     "sniffing": {"enabled": true, "destOverride": ["http", "tls"]}
   }],
   "outbounds": [{
     "tag": "to-landing",
     "protocol": "vless",
-    "settings": {"vnext": [{"address": "$landing_ip", "port": $landing_port, "users": [{"id": "$landing_uuid", "flow": "xtls-rprx-vision", "encryption": "none"}]}]},
+    "settings": {"vnext": [{"address": "$landing_ip", "port": $landing_port, "users": [{"id": "$landing_uuid", "flow": "", "encryption": "none"}]}]},
     "streamSettings": {"network": "tcp", "security": "reality", "realitySettings": {"dest": "$dest:443", "serverNames": ["$dest"], "privateKey": "$private_key", "shortIds": ["$landing_shortid"]}}
   }],
   "routing": {"rules": [{"type": "field", "outboundTag": "to-landing", "network": "tcp,udp"}]}
@@ -104,7 +104,7 @@ EOF
   "inbounds": [{
     "port": $port,
     "protocol": "vless",
-    "settings": {"clients": [{"id": "$uuid", "flow": "xtls-rprx-vision"}], "decryption": "none"},
+    "settings": {"clients": [{"id": "$uuid", "flow": ""}], "decryption": "none"},
     "streamSettings": {"network": "tcp", "security": "reality", "realitySettings": {"dest": "$dest:443", "serverNames": ["$dest"], "privateKey": "$private_key", "publicKey": "$public_key", "shortIds": ["$short_id"]}},
     "sniffing": {"enabled": true, "destOverride": ["http", "tls"]}
   }],
@@ -114,7 +114,7 @@ EOF
     fi
 
     local server_ip=$(curl -s ifconfig.me || echo "你的服务器IP")
-    local vless_link="vless://$uuid@$server_ip:$port?encryption=none&security=reality&pbk=$public_key&fp=chrome&type=tcp&flow=xtls-rprx-vision&sni=$dest&sid=$short_id#${node_type}节点"
+    local vless_link="vless://$uuid@$server_ip:$port?encryption=none&security=reality&pbk=$public_key&fp=chrome&type=tcp&sni=$dest&sid=$short_id#${node_type}节点"
 
     echo -e "\n${green}${bold}===== $node_type 节点配置完成 =====${plain}\n"
     echo -e "${yellow}基本信息：${plain}"
