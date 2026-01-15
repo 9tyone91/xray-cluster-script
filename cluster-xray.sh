@@ -8,7 +8,7 @@ bold='\033[1m'
 
 [[ $EUID -ne 0 ]] && echo -e "${red}${bold}错误：必须root运行！${plain}" && exit 1
 
-# 先检查并安装 uuidgen，避免中途干扰
+# 先安装 uuidgen
 if ! command -v uuidgen >/dev/null 2>&1; then
     echo -e "${yellow}安装 uuidgen...${plain}"
     apt update -qq && apt install -y uuid-runtime
@@ -44,7 +44,7 @@ config_node() {
 
     local port
     if [[ $is_transit -eq 1 ]]; then
-        port=$(($RANDOM % 40000 + 20000))  # 随机高位端口 20000-60000
+        port=$(($RANDOM % 40000 + 20000))
         read -p "中转端口 (默认 $port，推荐随机高位): " port_input && [[ -n "$port_input" ]] && port=$port_input
     else
         port=$(($RANDOM % 50000 + 10000))
@@ -54,8 +54,8 @@ config_node() {
     local uuid=$(gen_uuid)
     local short_id=$(gen_shortid)
 
-    local dest
-    read -p "伪装网站 (默认 www.microsoft.com): " dest && [[ -z "$dest" ]] && dest="www.microsoft.com"
+    local dest="www.bing.com"  # 默认换 sni 为 bing，提高成功率
+    read -p "伪装网站 (默认 www.bing.com): " dest_input && [[ -n "$dest_input" ]] && dest=$dest_input
 
     echo -e "${yellow}请手动输入 Reality keypair（推荐先运行 $XRAY_BIN x25519 获取）：${plain}"
     read -p "Private key (服务器用): " private_key
@@ -89,13 +89,7 @@ config_node() {
     "streamSettings": {"network": "tcp", "security": "reality", "realitySettings": {"dest": "$dest:443", "serverNames": ["$dest"], "privateKey": "$private_key", "publicKey": "$public_key", "shortIds": ["$short_id"]}},
     "sniffing": {"enabled": true, "destOverride": ["http", "tls"]}
   }],
-  "outbounds": [{
-    "tag": "to-landing",
-    "protocol": "vless",
-    "settings": {"vnext": [{"address": "$landing_ip", "port": $landing_port, "users": [{"id": "$landing_uuid", "flow": "", "encryption": "none"}]}]},
-    "streamSettings": {"network": "tcp", "security": "reality", "realitySettings": {"dest": "$dest:443", "serverNames": ["$dest"], "privateKey": "$private_key", "shortIds": ["$landing_shortid"]}}
-  }],
-  "routing": {"rules": [{"type": "field", "outboundTag": "to-landing", "network": "tcp,udp"}]}
+  "outbounds": [{"protocol": "freedom"}]  // 中转 outbound 用 freedom，避免双层 Reality
 }
 EOF
     else
