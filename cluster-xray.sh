@@ -5,7 +5,6 @@ green='\033[0;32m'
 yellow='\033[0;33m'
 plain='\033[0m'
 bold='\033[1m'
-underline='\033[4m'
 
 [[ $EUID -ne 0 ]] && echo -e "${red}${bold}错误：必须root运行！${plain}" && exit 1
 
@@ -20,40 +19,17 @@ fi
 
 gen_uuid() {
     if ! command -v uuidgen >/dev/null 2>&1; then
-        echo -e "${yellow}uuidgen 未安装，正在自动安装...${plain}"
         apt update && apt install uuid-runtime -y
     fi
     uuidgen
 }
 
 gen_shortid() {
-    local sid
-    sid=$(openssl rand -hex 8)
+    local sid=$(openssl rand -hex 8)
     while [[ ! $sid =~ ^[0-9a-fA-F]{16}$ ]]; do
         sid=$(openssl rand -hex 8)
     done
     echo "$sid"
-}
-
-print_header() {
-    echo -e "\n${green}${bold}=================== ${node_type}节点配置完成 ===================${plain}\n"
-}
-
-print_info() {
-    echo -e "${yellow}基本信息：${plain}"
-    echo "  UUID:          $uuid"
-    echo "  Short ID:      $short_id"
-    echo "  端口:          $port"
-    echo "  伪装网站:      $dest"
-    echo "  Private Key:   $private_key"
-    echo "  Public Key:    $public_key"
-    echo -e "\n${green}完整 vless 链接（直接复制导入客户端）：${plain}"
-    echo "$vless_link"
-}
-
-print_firewall() {
-    echo -e "\n${yellow}防火墙提示（如果未开端口，请执行以下命令）：${plain}"
-    echo "ufw allow $port/tcp || iptables -A INPUT -p tcp --dport $port -j ACCEPT && iptables-save > /etc/iptables.rules"
 }
 
 config_node() {
@@ -61,7 +37,7 @@ config_node() {
     local is_transit=0
     [[ "$node_type" == "中转" ]] && is_transit=1
 
-    echo -e "\n${green}${bold}开始配置 $node_type 节点${plain}\n"
+    echo -e "\n${green}${bold}===== 开始配置 $node_type 节点 =====${plain}\n"
 
     local port
     if [[ $is_transit -eq 1 ]]; then
@@ -134,11 +110,26 @@ EOF
 EOF
     fi
 
-    print_header
+    # 自动检测服务器 IP
+    local server_ip=$(curl -s ifconfig.me || echo "你的服务器IP")
 
-    print_info
+    # 生成 vless 链接
+    local vless_link="vless://$uuid@$server_ip:$port?encryption=none&security=reality&pbk=$public_key&fp=chrome&type=tcp&flow=xtls-rprx-vision&sni=$dest&sid=$short_id#${node_type}节点"
 
-    print_firewall
+    echo -e "\n${green}${bold}===== $node_type 节点配置完成 =====${plain}\n"
+    echo -e "${yellow}基本信息：${plain}"
+    echo "  UUID          : $uuid"
+    echo "  Short ID      : $short_id"
+    echo "  端口          : $port"
+    echo "  伪装网站      : $dest"
+    echo "  Private Key   : $private_key"
+    echo "  Public Key    : $public_key"
+
+    echo -e "\n${green}完整 vless 链接（直接复制导入客户端）：${plain}"
+    echo "$vless_link"
+
+    echo -e "\n${yellow}防火墙提示（如果未开端口，请执行）：${plain}"
+    echo "ufw allow $port/tcp || iptables -A INPUT -p tcp --dport $port -j ACCEPT && iptables-save > /etc/iptables.rules"
 
     systemctl restart xray || $XRAY_BIN restart
 }
@@ -157,5 +148,5 @@ case $choice in
 esac
 
 echo -e "\n${green}配置完成！服务已重启。${plain}"
-echo "检查配置: ls $CONF_DIR && cat $CONF_DIR/VLESS-REALITY-*.json"
-echo "用 'xray' 进入 233boy 原菜单。"
+echo "检查: ls $CONF_DIR && cat $CONF_DIR/VLESS-REALITY-*.json"
+echo "用 'xray' 进入原菜单。"
