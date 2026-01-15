@@ -24,7 +24,15 @@ gen_uuid() {
     uuidgen
 }
 
-gen_shortid() { openssl rand -hex 8; }
+gen_shortid() {
+    local sid
+    sid=$(openssl rand -hex 8)
+    # 确保纯 hex，长度 16 位
+    while [[ ! $sid =~ ^[0-9a-fA-F]{16}$ ]]; do
+        sid=$(openssl rand -hex 8)
+    done
+    echo "$sid"
+}
 
 config_landing() {
     echo -e "${green}配置出口节点${plain}"
@@ -36,8 +44,7 @@ config_landing() {
 
     read -p "伪装网站 (默认 www.microsoft.com): " dest && [[ -z "$dest" ]] && dest="www.microsoft.com"
 
-    echo -e "${yellow}请先在另一个终端运行： $XRAY_BIN x25519${plain}"
-    echo -e "${yellow}复制 Private key 和 Public key，然后粘贴到下面提示：${plain}"
+    echo -e "${yellow}请先运行 $XRAY_BIN x25519 获取 key，然后粘贴：${plain}"
     read -p "Private key (服务器用): " private_key
     read -p "Public key (客户端pbk用): " public_key
 
@@ -46,9 +53,9 @@ config_landing() {
         exit 1
     fi
 
-    # 完整显示你输入的 key
     echo -e "${green}你输入的 Private Key: $private_key${plain}"
     echo -e "${green}你输入的 Public Key: $public_key${plain}"
+    echo -e "${green}Short ID: $short_id${plain}"
 
     conf_file="$CONF_DIR/VLESS-REALITY-EXPORT-$port.json"
     cat > "$conf_file" <<EOF
@@ -73,6 +80,9 @@ EOF
     echo -e "${yellow}完整 vless 链接（直接复制导入客户端）:${plain}"
     echo "vless://$uuid@$server_ip:$port?encryption=none&security=reality&pbk=$public_key&fp=chrome&type=tcp&flow=xtls-rprx-vision&sni=$dest&sid=$short_id#出口节点"
 
+    echo -e "${yellow}请开防火墙端口（如果未开）：${plain}"
+    echo "ufw allow $port/tcp || iptables -A INPUT -p tcp --dport $port -j ACCEPT && iptables-save > /etc/iptables.rules"
+
     systemctl restart xray || $XRAY_BIN restart
 }
 
@@ -92,7 +102,7 @@ config_transit() {
     transit_uuid=$(gen_uuid)
     short_id=$(gen_shortid)
 
-    echo -e "${yellow}请手动输入中转节点的 Reality key（推荐用出口的或新生成）：${plain}"
+    echo -e "${yellow}请手动输入中转节点的 Reality key（推荐复用出口的）：${plain}"
     read -p "Private key (服务器用): " transit_private
     read -p "Public key (客户端pbk用): " transit_public
 
@@ -126,6 +136,9 @@ EOF
     echo -e "${green}完成！文件: $conf_file${plain}"
     echo "UUID: $transit_uuid"
     echo "Short ID: $short_id"
+
+    echo -e "${yellow}请开防火墙端口（如果未开）：${plain}"
+    echo "ufw allow $transit_port/tcp || iptables -A INPUT -p tcp --dport $transit_port -j ACCEPT && iptables-save > /etc/iptables.rules"
 
     systemctl restart xray || $XRAY_BIN restart
 }
