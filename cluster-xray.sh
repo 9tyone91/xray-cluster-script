@@ -36,7 +36,8 @@ config_landing() {
 
     read -p "伪装网站 (默认 www.microsoft.com): " dest && [[ -z "$dest" ]] && dest="www.microsoft.com"
 
-    echo -e "${yellow}请手动生成 keypair 并输入（先运行 $XRAY_BIN x25519 获取）：${plain}"
+    echo -e "${yellow}请先在另一个终端运行： $XRAY_BIN x25519${plain}"
+    echo -e "${yellow}复制 Private key 和 Public key，然后粘贴到下面提示：${plain}"
     read -p "Private key (服务器用): " private_key
     read -p "Public key (客户端pbk用): " public_key
 
