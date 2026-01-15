@@ -9,7 +9,7 @@ bold='\033[1m'
 [[ $EUID -ne 0 ]] && echo -e "${red}${bold}错误：必须root运行！${plain}" && exit 1
 
 # 先安装 uuidgen，避免中途干扰
-if ! command -v uuidgen >/dev/null 2>&1; then
+if ! command -v uuidgen >/dev/null 2&1; then
     echo -e "${yellow}安装 uuidgen...${plain}"
     apt update && apt install uuid-runtime -y
 fi
@@ -44,8 +44,8 @@ config_node() {
 
     local port
     if [[ $is_transit -eq 1 ]]; then
-        port=2053  # 推荐非标准端口，避免雨云挡 443
-        read -p "中转端口 (推荐 2053，避免 443 被挡，默认 2053): " port_input && [[ -n "$port_input" ]] && port=$port_input
+        port=$(($RANDOM % 50000 + 10000))  # 随机高位端口
+        read -p "中转端口 (默认 $port, 推荐随机高位避免雨云挡): " port_input && [[ -n "$port_input" ]] && port=$port_input
     else
         port=$(($RANDOM % 50000 + 10000))
         read -p "端口 (默认 $port): " port_input && [[ -n "$port_input" ]] && port=$port_input
