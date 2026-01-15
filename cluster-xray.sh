@@ -8,10 +8,9 @@ bold='\033[1m'
 
 [[ $EUID -ne 0 ]] && echo -e "${red}${bold}错误：必须root运行！${plain}" && exit 1
 
-# 先安装 uuidgen
+# 静默安装 uuidgen，避免干扰
 if ! command -v uuidgen >/dev/null 2>&1; then
-    echo -e "${yellow}安装 uuidgen...${plain}"
-    apt update -qq && apt install -y uuid-runtime
+    apt update -qq && apt install -y uuid-runtime >/dev/null 2>&1
 fi
 
 CONF_DIR="/etc/xray/conf"
@@ -132,25 +131,6 @@ EOF
     systemctl restart xray || $XRAY_BIN restart
 }
 
-show_menu() {
-    echo -e "\n${green}${bold}233boy Xray 集群脚本${plain}\n"
-    echo "1. 配置出口节点"
-    echo "2. 配置中转节点"
-    echo "3. 查看已配置节点信息"
-    echo "4. 退出"
-    read -p "选择: " choice
-
-    case $choice in
-        1) config_node "出口" ;;
-        2) config_node "中转" ;;
-        3) view_configs ;;
-        4) exit 0 ;;
-        *) echo "无效选择" ;;
-    esac
-
-    show_menu
-}
-
 view_configs() {
     echo -e "\n${green}${bold}===== 查看已配置节点信息 =====${plain}\n"
 
@@ -163,7 +143,7 @@ view_configs() {
             "端口: \(.inbounds[0].port)",
             "UUID: \(.inbounds[0].settings.clients[0].id)",
             "Short ID: \(.inbounds[0].streamSettings.realitySettings.shortIds[0])",
-            "伪装网站: \(.inbounds[0].streamSettings.realitySettings.dest | split(":")[0])",
+            "伪装网站: \(.inbounds[0].streamSettings.realitySettings.dest | split(\":\")[0])",
             "Public Key: \(.inbounds[0].streamSettings.realitySettings.publicKey)",
             "Private Key: \(.inbounds[0].streamSettings.realitySettings.privateKey)"
             ' "$file" 2>/dev/null || echo "无法解析该文件"
@@ -181,11 +161,9 @@ view_configs() {
             "端口: \(.inbounds[0].port)",
             "UUID: \(.inbounds[0].settings.clients[0].id)",
             "Short ID: \(.inbounds[0].streamSettings.realitySettings.shortIds[0])",
-            "伪装网站: \(.inbounds[0].streamSettings.realitySettings.dest | split(":")[0])",
+            "伪装网站: \(.inbounds[0].streamSettings.realitySettings.dest | split(\":\")[0])",
             "Public Key: \(.inbounds[0].streamSettings.realitySettings.publicKey)",
-            "Private Key: \(.inbounds[0].streamSettings.realitySettings.privateKey)",
-            "出口IP: \(.outbounds[0].settings.vnext[0].address // "freedom")",
-            "出口端口: \(.outbounds[0].settings.vnext[0].port // "无")"
+            "Private Key: \(.inbounds[0].streamSettings.realitySettings.privateKey)"
             ' "$file" 2>/dev/null || echo "无法解析该文件"
         done
     else
@@ -194,27 +172,23 @@ view_configs() {
 
     echo -e "\n${yellow}查看原始文件命令：${plain}"
     echo "ls -lt $CONF_DIR/VLESS-REALITY-* | head -n 10"
-    echo "cat $CONF_DIR/VLESS-REALITY-EXPORT-*.json   # 出口"
-    echo "cat $CONF_DIR/VLESS-REALITY-TRANSIT-*.json   # 中转"
+    echo "cat $CONF_DIR/VLESS-REALITY-EXPORT-*.json   # 最新出口"
+    echo "cat $CONF_DIR/VLESS-REALITY-TRANSIT-*.json   # 最新中转"
 }
 
-show_menu() {
-    echo -e "\n${green}${bold}233boy Xray 集群脚本${plain}\n"
-    echo "1. 配置出口节点"
-    echo "2. 配置中转节点"
-    echo "3. 查看已配置节点信息"
-    echo "4. 退出"
-    read -p "选择: " choice
+echo -e "\n${green}${bold}233boy Xray 集群脚本${plain}\n"
+echo "1. 配置出口节点"
+echo "2. 配置中转节点"
+echo "3. 查看已配置节点信息"
+echo "4. 退出"
+read -p "选择: " choice
 
-    case $choice in
-        1) config_node "出口" ;;
-        2) config_node "中转" ;;
-        3) view_configs ;;
-        4) exit 0 ;;
-        *) echo "无效选择" ;;
-    esac
+case $choice in
+    1) config_node "出口" ;;
+    2) config_node "中转" ;;
+    3) view_configs ;;
+    4) exit 0 ;;
+    *) echo "无效选择" ;;
+esac
 
-    show_menu
-}
-
-show_menu
+echo -e "\n${green}操作完成！${plain}"
