@@ -4,21 +4,23 @@ red='\033[0;31m'
 green='\033[0;32m'
 yellow='\033[0;33m'
 plain='\033[0m'
+bold='\033[1m'
+underline='\033[4m'
 
-[[ $EUID -ne 0 ]] && echo -e "${red}必须root运行！${plain}" && exit 1
+[[ $EUID -ne 0 ]] && echo -e "${red}${bold}错误：必须root运行！${plain}" && exit 1
 
 CONF_DIR="/etc/xray/conf"
 XRAY_BIN="/etc/xray/bin/xray"
 
 if [[ ! -d "$CONF_DIR" ]]; then
-    echo -e "${green}安装233boy Xray...${plain}"
+    echo -e "${green}正在安装 233boy Xray...${plain}"
     bash <(wget -qO- https://github.com/233boy/Xray/raw/main/install.sh) || exit 1
     sleep 5
 fi
 
 gen_uuid() {
     if ! command -v uuidgen >/dev/null 2>&1; then
-        echo -e "${yellow}uuidgen 未安装！${plain}"
+        echo -e "${yellow}uuidgen 未安装，正在自动安装...${plain}"
         apt update && apt install uuid-runtime -y
     fi
     uuidgen
@@ -33,16 +35,38 @@ gen_shortid() {
     echo "$sid"
 }
 
+print_header() {
+    echo -e "\n${green}${bold}=================== ${node_type}节点配置完成 ===================${plain}\n"
+}
+
+print_info() {
+    echo -e "${yellow}基本信息：${plain}"
+    echo "  UUID:          $uuid"
+    echo "  Short ID:      $short_id"
+    echo "  端口:          $port"
+    echo "  伪装网站:      $dest"
+    echo "  Private Key:   $private_key"
+    echo "  Public Key:    $public_key"
+    echo -e "\n${green}完整 vless 链接（直接复制导入客户端）：${plain}"
+    echo "$vless_link"
+}
+
+print_firewall() {
+    echo -e "\n${yellow}防火墙提示（如果未开端口，请执行以下命令）：${plain}"
+    echo "ufw allow $port/tcp || iptables -A INPUT -p tcp --dport $port -j ACCEPT && iptables-save > /etc/iptables.rules"
+}
+
 config_node() {
-    local node_type="$1"  # "出口" or "中转"
+    local node_type="$1"
     local is_transit=0
     [[ "$node_type" == "中转" ]] && is_transit=1
 
-    echo -e "${green}配置${node_type}节点${plain}"
+    echo -e "\n${green}${bold}开始配置 $node_type 节点${plain}\n"
+
     local port
     if [[ $is_transit -eq 1 ]]; then
         port=443
-        read -p "中转端口 (默认443): " port_input && [[ -n "$port_input" ]] && port=$port_input
+        read -p "中转端口 (默认 443): " port_input && [[ -n "$port_input" ]] && port=$port_input
     else
         port=$(($RANDOM % 50000 + 10000))
         read -p "端口 (默认 $port): " port_input && [[ -n "$port_input" ]] && port=$port_input
@@ -54,7 +78,7 @@ config_node() {
     local dest
     read -p "伪装网站 (默认 www.microsoft.com): " dest && [[ -z "$dest" ]] && dest="www.microsoft.com"
 
-    echo -e "${yellow}请先运行 $XRAY_BIN x25519 获取 key，然后粘贴：${plain}"
+    echo -e "${yellow}请手动输入 Reality keypair（推荐先运行 $XRAY_BIN x25519 获取）：${plain}"
     read -p "Private key (服务器用): " private_key
     read -p "Public key (客户端pbk用): " public_key
 
@@ -63,10 +87,6 @@ config_node() {
         exit 1
     fi
 
-    echo -e "${green}你输入的 Private Key: $private_key${plain}"
-    echo -e "${green}你输入的 Public Key: $public_key${plain}"
-    echo -e "${green}Short ID: $short_id${plain}"
-
     local conf_file
     if [[ $is_transit -eq 1 ]]; then
         conf_file="$CONF_DIR/VLESS-REALITY-TRANSIT-$port.json"
@@ -74,7 +94,6 @@ config_node() {
         conf_file="$CONF_DIR/VLESS-REALITY-EXPORT-$port.json"
     fi
 
-    local config_content
     if [[ $is_transit -eq 1 ]]; then
         read -p "出口IP: " landing_ip
         read -p "出口端口: " landing_port
@@ -82,7 +101,7 @@ config_node() {
         read -p "出口Public Key: " landing_pubkey
         read -p "出口Short ID: " landing_shortid
 
-        config_content=$(cat <<EOF
+        cat > "$conf_file" <<EOF
 {
   "inbounds": [{
     "port": $port,
@@ -100,9 +119,8 @@ config_node() {
   "routing": {"rules": [{"type": "field", "outboundTag": "to-landing", "network": "tcp,udp"}]}
 }
 EOF
-)
     else
-        config_content=$(cat <<EOF
+        cat > "$conf_file" <<EOF
 {
   "inbounds": [{
     "port": $port,
@@ -114,34 +132,18 @@ EOF
   "outbounds": [{"protocol": "freedom"}]
 }
 EOF
-)
     fi
 
-    echo "$config_content" > "$conf_file"
-    echo -e "${green}完成！文件: $conf_file${plain}"
-    echo "UUID: $uuid"
-    echo "Short ID: $short_id"
-    echo "端口: $port"
-    echo "伪装: $dest"
+    print_header
 
-    local server_ip=$(curl -s ifconfig.me || echo "你的服务器IP")
-    local link
-    if [[ $is_transit -eq 1 ]]; then
-        link="vless://$uuid@$server_ip:$port?encryption=none&security=reality&pbk=$public_key&fp=chrome&type=tcp&flow=xtls-rprx-vision&sni=$dest&sid=$short_id#中转节点（固定出口IP）"
-    else
-        link="vless://$uuid@$server_ip:$port?encryption=none&security=reality&pbk=$public_key&fp=chrome&type=tcp&flow=xtls-rprx-vision&sni=$dest&sid=$short_id#出口节点"
-    fi
+    print_info
 
-    echo -e "${yellow}完整 vless 链接（直接复制导入客户端）:${plain}"
-    echo "$link"
-
-    echo -e "${yellow}请开防火墙端口（如果未开）：${plain}"
-    echo "ufw allow $port/tcp || iptables -A INPUT -p tcp --dport $port -j ACCEPT && iptables-save > /etc/iptables.rules"
+    print_firewall
 
     systemctl restart xray || $XRAY_BIN restart
 }
 
-echo -e "${yellow}集群脚本菜单${plain}"
+echo -e "\n${green}${bold}233boy Xray 集群脚本${plain}\n"
 echo "1. 配置出口节点"
 echo "2. 配置中转节点"
 echo "3. 退出"
@@ -154,6 +156,6 @@ case $choice in
     *) echo "无效选择" ;;
 esac
 
-echo -e "${green}完成！服务已重启。"
-echo "检查: ls $CONF_DIR && cat $CONF_DIR/VLESS-REALITY-*.json"
-echo "用 'xray' 进入原菜单。"
+echo -e "\n${green}配置完成！服务已重启。${plain}"
+echo "检查配置: ls $CONF_DIR && cat $CONF_DIR/VLESS-REALITY-*.json"
+echo "用 'xray' 进入 233boy 原菜单。"
