@@ -9,8 +9,9 @@ bold='\033[1m'
 [[ $EUID -ne 0 ]] && echo -e "${red}${bold}错误：必须root运行！${plain}" && exit 1
 
 SS_CONF="/etc/shadowsocks-libev/config.json"
-OBFS_PLUGIN="/usr/bin/simple-obfs-server"
+OBFS_BIN="/usr/bin/simple-obfs-server"
 
+# 自动设置简短别名（永久）
 setup_alias() {
     local alias_name="ssobfs"
     local script_url="https://raw.githubusercontent.com/9tyone91/xray-cluster-script/main/cluster-ss-obfs.sh"
@@ -21,6 +22,8 @@ setup_alias() {
         echo "bash <(curl -Ls $script_url)" > "$alias_file"
         chmod +x "$alias_file"
         echo -e "${green}设置成功！以后直接输入 '$alias_name' 启动${plain}"
+    else
+        echo -e "${yellow}别名 '$alias_name' 已存在，跳过设置${plain}"
     fi
 }
 
@@ -28,10 +31,12 @@ setup_alias
 
 install_ss_obfs() {
     if ! command -v ss-server >/dev/null 2>&1; then
+        echo -e "${green}安装 shadowsocks-libev...${plain}"
         apt update -qq && apt install -y shadowsocks-libev
     fi
     if ! command -v simple-obfs-server >/dev/null 2>&1; then
-        apt install -y simple-obfs
+        echo -e "${green}安装 simple-obfs...${plain}"
+        apt install -y pwgen simple-obfs
     fi
 }
 
@@ -53,7 +58,8 @@ config_export() {
   "plugin": "simple-obfs-server",
   "plugin_opts": "obfs=http",
   "mode": "tcp_and_udp",
-  "fast_open": true
+  "fast_open": true,
+  "reuse_port": true
 }
 EOF
 
@@ -88,7 +94,8 @@ config_transit() {
   "plugin": "simple-obfs-server",
   "plugin_opts": "obfs=http",
   "mode": "tcp_and_udp",
-  "fast_open": true
+  "fast_open": true,
+  "reuse_port": true
 }
 EOF
 
@@ -110,7 +117,7 @@ view_config() {
     if [[ -f $SS_CONF ]]; then
         cat $SS_CONF
     else
-        echo "暂无配置"
+        echo "暂无配置，$SS_CONF 不存在"
     fi
 }
 
