@@ -49,7 +49,7 @@ config_export() {
   "server": "0.0.0.0",
   "server_port": $port,
   "password": "$password",
-  "method": "chacha20-ietf-poly1305",
+  "method": "aes-128-gcm",
   "mode": "tcp_and_udp",
   "fast_open": true,
   "reuse_port": true
@@ -62,7 +62,7 @@ EOF
     echo -e "\n${green}出口节点配置完成！${plain}"
     echo "端口: $port"
     echo "密码: $password"
-    echo "加密: chacha20-ietf-poly1305"
+    echo "加密: aes-128-gcm"
     echo "查看配置: cat $SS_CONF"
 }
 
@@ -77,12 +77,13 @@ config_transit() {
 
     ufw allow $port/tcp || iptables -A INPUT -p tcp --dport $port -j ACCEPT && iptables-save > /etc/iptables.rules
 
+    # 配置 ss-redir（透明代理）
     cat > $SS_CONF <<EOF
 {
   "server": "0.0.0.0",
   "server_port": $port,
   "password": "$export_password",
-  "method": "chacha20-ietf-poly1305",
+  "method": "aes-128-gcm",
   "mode": "tcp_and_udp",
   "fast_open": true,
   "reuse_port": true
@@ -90,9 +91,11 @@ config_transit() {
 EOF
 
     killall ss-server 2>/dev/null
+    killall ss-redir 2>/dev/null
     ss-server -c $SS_CONF -d start
+    ss-redir -c $SS_CONF -l 1080 -d start
 
-    # 透明转发到出口
+    # iptables 透明转发
     iptables -t nat -A PREROUTING -p tcp --dport $port -j REDIRECT --to-ports 1080
     iptables -t nat -A PREROUTING -p udp --dport $port -j REDIRECT --to-ports 1080
     iptables-save > /etc/iptables.rules
@@ -101,8 +104,8 @@ EOF
     echo -e "\n${green}中转节点配置完成！${plain}"
     echo "中转端口: $port"
     echo "密码: $export_password (与出口一致)"
-    echo "加密: chacha20-ietf-poly1305"
-    echo "客户端 SS 链接: ss://chacha20-ietf-poly1305:$export_password@$server_ip:$port#中转节点"
+    echo "加密: aes-128-gcm"
+    echo "客户端 SS 链接: ss://aes-128-gcm:$export_password@$server_ip:$port#中转节点"
     echo "查看配置: cat $SS_CONF"
 }
 
@@ -132,3 +135,4 @@ esac
 
 echo -e "\n${green}操作完成！${plain}"
 echo "服务状态: ss-server -c $SS_CONF -d status"
+echo "透明代理状态: ss-redir -c $SS_CONF -d status"
