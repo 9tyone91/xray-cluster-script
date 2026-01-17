@@ -34,12 +34,13 @@ setup_alias() {
 
 setup_alias
 
-install_dependencies() {
-    echo -e "${green}安装依赖...${plain}"
+install_all_dependencies() {
+    echo -e "${green}安装所有编译依赖...${plain}"
+    dnf update -y
     dnf install -y epel-release dnf-plugins-core
     dnf config-manager --set-enabled crb
-    dnf groupinstall -y "Development Tools"
-    dnf install -y git gcc make cmake autoconf libtool libev-devel libsodium-devel mbedtls-devel pcre-devel c-ares-devel libxml2-devel libevent-devel zlib-devel openssl-devel pwgen xmlto iptables-legacy nftables
+    dnf groupinstall -y "Development Tools" "C Development Tools and Libraries"
+    dnf install -y git gcc gcc-c++ make cmake autoconf libtool pkgconfig libev-devel libsodium-devel mbedtls-devel pcre-devel c-ares-devel libxml2-devel libevent-devel zlib-devel openssl-devel pwgen xmlto libcap-devel libcurl-devel libjson-c-devel
 }
 
 compile_ss_libev() {
@@ -134,7 +135,7 @@ EOF
     $SS_BIN -c $SS_CONF -d start
     $REDIR_BIN -c $SS_CONF -l 1080 -d start
 
-    # nftables 透明转发（CentOS 9 推荐）
+    # nftables 透明转发
     nft add table ip nat
     nft add chain ip nat prerouting { type nat hook prerouting priority 0 \; }
     nft add rule ip nat prerouting tcp dport $port redirect to 1080
@@ -153,7 +154,7 @@ view_config() {
     cat $SS_CONF 2>/dev/null || echo "暂无配置"
 }
 
-echo -e "\n${green}${bold}Shadowsocks 集群脚本 (CentOS 9 版)${plain}\n"
+echo -e "\n${green}${bold}Shadowsocks 集群脚本 (CentOS 9 专用版)${plain}\n"
 echo "1. 配置出口节点"
 echo "2. 配置中转节点"
 echo "3. 查看当前配置"
