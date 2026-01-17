@@ -31,7 +31,8 @@ setup_alias
 install_ss() {
     if ! command -v ss-server >/dev/null 2>&1; then
         echo -e "${green}安装 shadowsocks-libev...${plain}"
-        apt update -qq && apt install -y shadowsocks-libev pwgen
+        dnf install -y epel-release
+        dnf install -y shadowsocks-libev pwgen
     fi
 }
 
@@ -42,7 +43,8 @@ config_export() {
     local password=$(openssl rand -hex 8)
     read -p "密码 (默认 $password): " pass_input && [[ -n "$pass_input" ]] && password=$pass_input
 
-    ufw allow $port/tcp || iptables -A INPUT -p tcp --dport $port -j ACCEPT && iptables-save > /etc/iptables.rules
+    firewall-cmd --permanent --add-port=$port/tcp --add-port=$port/udp
+    firewall-cmd --reload
 
     cat > $SS_CONF <<EOF
 {
@@ -75,7 +77,8 @@ config_transit() {
     local port=$(($RANDOM % 40000 + 20000))
     read -p "中转端口 (默认 $port): " port_input && [[ -n "$port_input" ]] && port=$port_input
 
-    ufw allow $port/tcp || iptables -A INPUT -p tcp --dport $port -j ACCEPT && iptables-save > /etc/iptables.rules
+    firewall-cmd --permanent --add-port=$port/tcp --add-port=$port/udp
+    firewall-cmd --reload
 
     cat > $SS_CONF <<EOF
 {
@@ -94,7 +97,7 @@ EOF
     ss-server -c $SS_CONF -d start
     ss-redir -c $SS_CONF -l 1080 -d start
 
-    # iptables 透明转发
+    # iptables 透明转发（CentOS 9 用 nftables，但 iptables-legacy 兼容）
     iptables -t nat -A PREROUTING -p tcp --dport $port -j REDIRECT --to-ports 1080
     iptables -t nat -A PREROUTING -p udp --dport $port -j REDIRECT --to-ports 1080
     iptables-save > /etc/iptables.rules
@@ -119,7 +122,7 @@ view_config() {
     fi
 }
 
-echo -e "\n${green}${bold}Shadowsocks 集群脚本${plain}\n"
+echo -e "\n${green}${bold}Shadowsocks 集群脚本 (CentOS 9 版)${plain}\n"
 echo "1. 配置出口节点"
 echo "2. 配置中转节点"
 echo "3. 查看当前配置"
