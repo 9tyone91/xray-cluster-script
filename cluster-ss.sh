@@ -8,9 +8,9 @@ bold='\033[1m'
 
 [[ $EUID -ne 0 ]] && echo -e "${red}${bold}错误：必须root运行！${plain}" && exit 1
 
-# 检查系统是否 CentOS 9 / RHEL 9 系
+# 检查系统
 if ! grep -q "release 9" /etc/redhat-release 2>/dev/null; then
-    echo -e "${red}此脚本专为 CentOS 9 / AlmaLinux 9 / Rocky 9 设计，你的系统不是，请先重装 CentOS Stream 9${plain}"
+    echo -e "${red}此脚本专为 CentOS 9 / AlmaLinux 9 / Rocky 9 设计${plain}"
     exit 1
 fi
 
@@ -26,28 +26,27 @@ setup_alias() {
     local alias_file="/usr/local/bin/$alias_name"
 
     if [[ ! -f "$alias_file" ]]; then
-        echo -e "${green}自动设置永久别名 '$alias_name'...${plain}"
+        echo -e "${green}设置别名 '$alias_name'...${plain}"
         echo "bash <(curl -Ls $script_url)" > "$alias_file"
         chmod +x "$alias_file"
-        echo -e "${green}设置成功！以后直接输入 '$alias_name' 启动${plain}"
     fi
 }
 
 setup_alias
 
 install_dependencies() {
-    echo -e "${green}安装编译依赖...${plain}"
+    echo -e "${green}安装依赖...${plain}"
     dnf install -y epel-release dnf-plugins-core
     dnf config-manager --set-enabled crb
     dnf groupinstall -y "Development Tools"
-    dnf install -y git gcc make cmake autoconf libtool libev-devel libsodium-devel mbedtls-devel pcre-devel c-ares-devel libxml2-devel libevent-devel zlib-devel openssl-devel pwgen
+    dnf install -y git gcc make cmake autoconf libtool libev-devel libsodium-devel mbedtls-devel pcre-devel c-ares-devel libxml2-devel libevent-devel zlib-devel openssl-devel pwgen xmlto iptables-legacy nftables
 }
 
 compile_ss_libev() {
     if [[ ! -f "$SS_BIN" ]]; then
         echo -e "${green}编译 shadowsocks-libev...${plain}"
-        git clone https://github.com/shadowsocks/shadowsocks-libev.git /tmp/ss-libev || exit 1
-        cd /tmp/ss-libev || exit 1
+        git clone https://github.com/shadowsocks/shadowsocks-libev.git /tmp/ss-libev
+        cd /tmp/ss-libev
         git submodule update --init --recursive
         ./autogen.sh
         ./configure --prefix=/usr/local --disable-documentation
@@ -61,8 +60,8 @@ compile_ss_libev() {
 compile_simple_obfs() {
     if [[ ! -f "$OBFS_BIN" ]]; then
         echo -e "${green}编译 simple-obfs...${plain}"
-        git clone https://github.com/shadowsocks/simple-obfs.git /tmp/simple-obfs || exit 1
-        cd /tmp/simple-obfs || exit 1
+        git clone https://github.com/shadowsocks/simple-obfs.git /tmp/simple-obfs
+        cd /tmp/simple-obfs
         git submodule update --init --recursive
         ./autogen.sh
         ./configure --prefix=/usr/local
@@ -103,7 +102,6 @@ EOF
     echo "端口: $port"
     echo "密码: $password"
     echo "加密: aes-128-gcm"
-    echo "查看配置: cat $SS_CONF"
 }
 
 config_transit() {
@@ -136,10 +134,11 @@ EOF
     $SS_BIN -c $SS_CONF -d start
     $REDIR_BIN -c $SS_CONF -l 1080 -d start
 
-    # iptables 透明转发（CentOS 9 用 iptables-legacy）
-    iptables -t nat -A PREROUTING -p tcp --dport $port -j REDIRECT --to-ports 1080
-    iptables -t nat -A PREROUTING -p udp --dport $port -j REDIRECT --to-ports 1080
-    iptables-save > /etc/iptables.rules
+    # nftables 透明转发（CentOS 9 推荐）
+    nft add table ip nat
+    nft add chain ip nat prerouting { type nat hook prerouting priority 0 \; }
+    nft add rule ip nat prerouting tcp dport $port redirect to 1080
+    nft add rule ip nat prerouting udp dport $port redirect to 1080
 
     local server_ip=$(curl -s ifconfig.me || echo "你的中转IP")
     echo -e "\n${green}中转节点完成！${plain}"
@@ -147,19 +146,14 @@ EOF
     echo "密码: $export_password"
     echo "加密: aes-128-gcm"
     echo "客户端 SS 链接: ss://aes-128-gcm:$export_password@$server_ip:$port#中转节点"
-    echo "查看配置: cat $SS_CONF"
 }
 
 view_config() {
-    echo -e "\n${green}${bold}===== 查看当前配置 =====${plain}\n"
-    if [[ -f $SS_CONF ]]; then
-        cat $SS_CONF
-    else
-        echo "暂无配置"
-    fi
+    echo -e "\n${green}${bold}查看当前配置${plain}\n"
+    cat $SS_CONF 2>/dev/null || echo "暂无配置"
 }
 
-echo -e "\n${green}${bold}Shadowsocks 集群脚本 (CentOS 9 专用版)${plain}\n"
+echo -e "\n${green}${bold}Shadowsocks 集群脚本 (CentOS 9 版)${plain}\n"
 echo "1. 配置出口节点"
 echo "2. 配置中转节点"
 echo "3. 查看当前配置"
