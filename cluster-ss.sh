@@ -26,7 +26,6 @@ setup_alias() {
     fi
 }
 
-# 脚本启动时自动执行设置别名
 setup_alias
 
 install_ss() {
@@ -86,14 +85,17 @@ config_transit() {
   "method": "chacha20-ietf-poly1305",
   "mode": "tcp_and_udp",
   "fast_open": true,
-  "reuse_port": true,
-  "plugin": "ss-local",
-  "plugin_opts": "server;$export_ip:$export_port;password=$export_password"
+  "reuse_port": true
 }
 EOF
 
     killall ss-server 2>/dev/null
     ss-server -c $SS_CONF -d start
+
+    # 透明转发到出口
+    iptables -t nat -A PREROUTING -p tcp --dport $port -j REDIRECT --to-ports 1080
+    iptables -t nat -A PREROUTING -p udp --dport $port -j REDIRECT --to-ports 1080
+    iptables-save > /etc/iptables.rules
 
     local server_ip=$(curl -s ifconfig.me || echo "你的中转IP")
     echo -e "\n${green}中转节点配置完成！${plain}"
