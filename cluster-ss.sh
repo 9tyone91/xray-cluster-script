@@ -20,9 +20,9 @@ setup_alias() {
         echo -e "${green}自动设置永久别名 '$alias_name'...${plain}"
         echo "bash <(curl -Ls $script_url)" > "$alias_file"
         chmod +x "$alias_file"
-        echo -e "${green}设置成功！以后直接输入 '$alias_name' 即可启动 SS 集群脚本${plain}"
+        echo -e "${green}设置成功！以后直接输入 '$alias_name' 启动${plain}"
     else
-        echo -e "${yellow}别名 '$alias_name' 已存在，跳过设置${plain}"
+        echo -e "${yellow}别名 '$alias_name' 已存在，跳过${plain}"
     fi
 }
 
@@ -30,7 +30,7 @@ setup_alias
 
 install_ss() {
     if ! command -v ss-server >/dev/null 2>&1; then
-        echo -e "${green}安装 shadowsocks-libev...${plain}"
+        echo -e "${green}安装 shadowsocks-libev (CentOS 9 版)...${plain}"
         dnf install -y epel-release
         dnf install -y shadowsocks-libev pwgen
     fi
@@ -61,11 +61,11 @@ EOF
     killall ss-server 2>/dev/null
     ss-server -c $SS_CONF -d start
 
-    echo -e "\n${green}出口节点配置完成！${plain}"
+    echo -e "\n${green}出口节点完成！${plain}"
     echo "端口: $port"
     echo "密码: $password"
     echo "加密: aes-128-gcm"
-    echo "查看配置: cat $SS_CONF"
+    echo "查看: cat $SS_CONF"
 }
 
 config_transit() {
@@ -97,20 +97,18 @@ EOF
     ss-server -c $SS_CONF -d start
     ss-redir -c $SS_CONF -l 1080 -d start
 
-    # iptables 透明转发（CentOS 9 用 nftables，但 iptables-legacy 兼容）
+    # iptables 兼容（CentOS 9 用 iptables-legacy）
     iptables -t nat -A PREROUTING -p tcp --dport $port -j REDIRECT --to-ports 1080
     iptables -t nat -A PREROUTING -p udp --dport $port -j REDIRECT --to-ports 1080
     iptables-save > /etc/iptables.rules
 
     local server_ip=$(curl -s ifconfig.me || echo "你的中转IP")
-    echo -e "\n${green}中转节点配置完成！${plain}"
+    echo -e "\n${green}中转节点完成！${plain}"
     echo "中转端口: $port"
     echo "密码: $export_password (同出口)"
     echo "加密: aes-128-gcm"
     echo "客户端 SS 链接: ss://aes-128-gcm:$export_password@$server_ip:$port#中转节点"
-    echo "查看配置: cat $SS_CONF"
-    echo "服务状态: ss-server -c $SS_CONF -d status"
-    echo "redir 状态: ss-redir -c $SS_CONF -d status"
+    echo "查看: cat $SS_CONF"
 }
 
 view_config() {
@@ -122,7 +120,7 @@ view_config() {
     fi
 }
 
-echo -e "\n${green}${bold}Shadowsocks 集群脚本 (CentOS 9 版)${plain}\n"
+echo -e "\n${green}${bold}Shadowsocks 集群脚本 (CentOS 9 专用版)${plain}\n"
 echo "1. 配置出口节点"
 echo "2. 配置中转节点"
 echo "3. 查看当前配置"
